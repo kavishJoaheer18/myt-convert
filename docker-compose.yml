@@ -1,0 +1,77 @@
+name: gridlock
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gridlock
+      POSTGRES_PASSWORD: gridlock
+      POSTGRES_DB: gridlock
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gridlock"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+      target: api
+    environment:
+      DATABASE_URL: postgresql+psycopg://gridlock:gridlock@postgres:5432/gridlock
+      REDIS_URL: redis://redis:6379/0
+      DATA_DIR: /srv/data
+      LOG_LEVEL: INFO
+    volumes:
+      # Job artefacts are shared with the worker, which writes the workbooks.
+      - ./data:/srv/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./backend
+      target: worker
+    environment:
+      DATABASE_URL: postgresql+psycopg://gridlock:gridlock@postgres:5432/gridlock
+      REDIS_URL: redis://redis:6379/0
+      DATA_DIR: /srv/data
+      LOG_LEVEL: INFO
+      VLM_PROVIDER: ${VLM_PROVIDER:-anthropic}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - ./data:/srv/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      # Read by the browser, so it must be the host-visible address.
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:

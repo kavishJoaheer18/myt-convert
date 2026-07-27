@@ -1,0 +1,36 @@
+# Core dependencies: API, worker orchestration, digital extraction, Excel output.
+# OCR is a separate install (requirements-ocr.txt) so the API image stays small.
+
+# --- Web / API ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+pydantic==2.10.4
+pydantic-settings==2.7.0
+
+# --- Persistence ---
+SQLAlchemy==2.0.36
+psycopg[binary]==3.2.3
+alembic==1.14.0
+
+# --- Task queue ---
+celery==5.4.0
+redis==5.2.1
+
+# --- PDF / document core ---
+pymupdf==1.24.14
+pdfplumber==0.11.4
+openpyxl==3.1.5
+pillow==11.0.0
+numpy==2.2.0
+
+# --- Verification ---
+scikit-image==0.25.0
+
+# --- VLM providers ---
+anthropic==0.42.0
+httpx==0.28.1
+
+# --- Test / fixtures ---
+pytest==8.3.4
+reportlab==4.2.5

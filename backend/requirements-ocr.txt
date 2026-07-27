@@ -1,0 +1,6 @@
+# Phase 2 OCR stack, installed only into the worker image.
+# The CPU build of paddlepaddle is used deliberately: GPU is optional, and the
+# pipeline must work on a plain machine.
+opencv-python-headless==4.10.0.84
+paddlepaddle==2.6.2
+paddleocr==2.9.1
