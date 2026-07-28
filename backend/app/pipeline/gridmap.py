@@ -219,8 +219,14 @@ def _split_line_for_row(
         return []
 
     crossing = _crossing_verticals(band_top, band_bottom, verticals)
-    separators = crossing if len(crossing) >= 2 else corridors
-    outliers = set() if separators else _outlier_gap_positions(line)
+    ruled = len(crossing) >= 2
+    separators = crossing if ruled else corridors
+    # Corridors and outliers are complementary, not alternatives: a corridor
+    # runs the height of the page, an outlier is local to one line. A column gap
+    # crossed by wrapped text a few rows down produces no corridor but is still
+    # obvious on every row that has it. Inside a ruled table the borders are
+    # authoritative and neither applies.
+    outliers = set() if ruled else _outlier_gap_positions(line)
 
     runs: list[TextRun] = []
     current: list[Word] = []
@@ -246,9 +252,16 @@ def _split_line_for_row(
 def _outlier_gap_positions(line: TextLine) -> set[int]:
     """Indices of words preceded by a gap that stands out on this line.
 
-    Used only when the page offers no corridor to split on.  A gap must be both
-    absolutely wide and far larger than the line's typical spacing, so stretched
-    justification — where every gap grows together — never qualifies.
+    A gap must be both absolutely wide and far larger than the line's *word*
+    spacing.  That second measure is the lower quartile of the gaps, not the
+    median: a table row is mostly cell boundaries, so the median is itself a
+    column gap and nothing can exceed a multiple of it.  The lower quartile
+    still lands on the spacing between words inside a cell, which is what a
+    column gap has to be judged against — on the row of a real quotation, 1.7 pt
+    between words and 19.6 pt between the code and its description.
+
+    Justified text cannot produce an outlier this way, because justification
+    stretches every gap on the line by the same amount.
     """
     gaps = [
         line.words[i].bbox.x0 - line.words[i - 1].bbox.x1
@@ -260,7 +273,8 @@ def _outlier_gap_positions(line: TextLine) -> set[int]:
     if len(gaps) == 1:
         return {1} if gaps[0] > MIN_OUTLIER_GAP_PT else set()
 
-    typical = statistics.median(gaps)
+    ordered = sorted(gaps)
+    typical = ordered[max(0, (len(ordered) - 1) // 4)]
     threshold = max(MIN_OUTLIER_GAP_PT, OUTLIER_GAP_FACTOR * typical)
     return {i + 1 for i, gap in enumerate(gaps) if gap > threshold}
 
@@ -410,12 +424,13 @@ def whitespace_corridors(lines: list[TextLine], content: BBox) -> list[float]:
 
 
 def _boundaries_from_outlier_gaps(
-    lines: list[TextLine], content: BBox, min_support: int = 2
+    lines: list[TextLine], content: BBox, min_support: int = 3
 ) -> list[float]:
     """Column boundaries from gaps that stand out on their own line.
 
-    Only gaps that several lines agree on are kept, so one line with an unusual
-    break cannot invent a column for the whole sheet.
+    Several lines must agree on a gap before it becomes a column for the whole
+    sheet. A column grid is global to a worksheet, so one address block with
+    unusual spacing would otherwise add boundaries that split the table below it.
     """
     midpoints: list[float] = []
     for line in lines:
@@ -454,17 +469,17 @@ def build_column_boundaries(
     interior = [x for x in edges if content.x0 + MIN_BAND_SIZE < x < content.x1 - MIN_BAND_SIZE]
 
     if not interior:
-        interior = list(
+        # No borders: take the corridors that run the height of the page and the
+        # gaps individual lines break at, together. Neither finds every column on
+        # its own — a corridor is blocked by any wrapped line that crosses it,
+        # and an outlier only speaks for its own row — and a run split at a
+        # boundary that does not exist here would be concatenated straight back
+        # into its neighbour.
+        found = list(
             corridors if corridors is not None else whitespace_corridors(lines, content)
         )
-
-    if not interior:
-        # Nothing drew a column and no corridor runs the height of the page, but
-        # individual lines may still break cleanly — a two-column CV, where each
-        # side is a different length so no single strip stays clear. Without a
-        # boundary here the two halves of every line land in one cell and are
-        # concatenated into nonsense.
-        interior = _boundaries_from_outlier_gaps(lines, content)
+        found.extend(_boundaries_from_outlier_gaps(lines, content))
+        interior = _cluster_positions(sorted(found), tol=MIN_GAP_WIDTH)
 
     boundaries = _cluster_positions([content.x0, *interior, content.x1])
     return _prune_boundaries(boundaries)
