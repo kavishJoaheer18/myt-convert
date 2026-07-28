@@ -780,12 +780,18 @@ def build_sheet_grid(page: PageContent, title: str | None = None) -> SheetGrid:
             col_span = last_col - col + 1
 
             row, row_span = text_row, text_row_span
-            ruled_rows = _ruled_row_extent(
-                box, col_bounds[col], col_bounds[last_col + 1], row_bounds, horizontals
-            )
-            if ruled_rows is not None:
-                row, last_row = ruled_rows
-                row_span = last_row - row + 1
+            # Horizontal rules only bound a *cell* when this is a ruled cell —
+            # that is, when vertical borders delimited it too. A box drawn round
+            # a letterhead has horizontal rules as well, and reading those as
+            # cell edges gives every line inside the box a span reaching from the
+            # top of the box to the bottom, collapsing the lot into one cell.
+            if ruled_cols is not None:
+                ruled_rows = _ruled_row_extent(
+                    box, col_bounds[col], col_bounds[last_col + 1], row_bounds, horizontals
+                )
+                if ruled_rows is not None:
+                    row, last_row = ruled_rows
+                    row_span = last_row - row + 1
 
             key = (row, col)
             if key in occupied:
