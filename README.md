@@ -11,7 +11,7 @@ merged ranges and images of the source — plus per-cell confidence tracking.
 | 1 | Digital PDFs: classification, word + vector extraction, grid mapping, Excel output, upload UI | `pytest tests/test_phase1.py` at 100% cell accuracy | ✅ passing |
 | 2 | Scanned PDFs: OpenCV preprocessing, PaddleOCR, raster rule + figure detection, per-cell confidence | ≥98% on 300 DPI rasters | ✅ passing (100%) |
 | 3 | Formatting fidelity: borders, fills, colour, alignment, dates/currency/percentages | formatting assertions + LibreOffice render | ✅ passing |
-| 4 | Consensus & verification: dual extraction, zoom-and-re-ask, SSIM diff, review UI | ≥19 of 20 injected corruptions flagged | not started |
+| 4 | Consensus & verification: dual extraction, zoom-and-re-ask, SSIM diff, review UI | ≥19 of 20 injected corruptions flagged | ✅ passing (20/20) |
 
 ## Running the stack
 
@@ -63,6 +63,17 @@ Merged cells come from the borders around them rather than from how wide their
 text is, which is what lets a heading merged across four columns survive as one
 value. Values are typed only when a number format exists that displays them
 back character for character.
+
+Scanned pages take the same route. OCR produces words in page points and
+morphology recovers the rules from the raster, so grid mapping, type inference
+and the writer are shared with the digital path — only the certainty differs,
+and that rides along as a per-cell confidence score.
+
+Finally, a vision model reviews the finished grid against the page. Where it
+disagrees, the cell is re-rasterised from the PDF at 3.5× and put back to both
+the OCR engine and the model. A value is overwritten only when both agree
+against the original; anything still unsettled goes to the review screen rather
+than being guessed at.
 
 ## Layout
 

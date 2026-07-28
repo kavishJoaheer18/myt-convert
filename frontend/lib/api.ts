@@ -29,12 +29,57 @@ export interface PageSummary {
   height_pt: number;
 }
 
+export interface Discrepancy {
+  id: string;
+  page_number: number;
+  row: number;
+  col: number;
+  deterministic_value: string;
+  vlm_value: string;
+  resolved_value: string | null;
+  status: "OPEN" | "RESOLVED" | "DISMISSED";
+  confidence: number;
+}
+
 export interface JobDetail extends JobSummary {
   error: string | null;
   duration_ms: number;
   has_output: boolean;
   has_verified_output: boolean;
   pages: PageSummary[];
+  discrepancies: Discrepancy[];
+}
+
+export interface SheetCell {
+  row: number;
+  col: number;
+  row_span: number;
+  col_span: number;
+  text: string;
+  number_format: string;
+  source: string;
+  confidence: number;
+}
+
+export interface Sheet {
+  page_number: number;
+  n_rows: number;
+  n_cols: number;
+  cells: SheetCell[];
+}
+
+export interface CellCorrection {
+  page_number: number;
+  row: number;
+  col: number;
+  value: string;
+}
+
+export interface ReviewResponse {
+  job_id: string;
+  status: JobStatus;
+  applied: number;
+  remaining_discrepancies: number;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -74,4 +119,31 @@ export function uploadPdf(file: File): Promise<{ id: string; status: JobStatus }
 
 export function downloadUrl(id: string, verified = false): string {
   return `${API_URL}/jobs/${id}/download${verified ? "?verified=true" : ""}`;
+}
+
+export function getSheet(id: string, pageNumber: number): Promise<Sheet> {
+  return request<Sheet>(`/jobs/${id}/sheets/${pageNumber}`);
+}
+
+export function pageImageUrl(id: string, pageNumber: number): string {
+  return `${API_URL}/jobs/${id}/pages/${pageNumber}/image`;
+}
+
+export function cropUrl(id: string, discrepancyId: string): string {
+  return `${API_URL}/jobs/${id}/discrepancies/${discrepancyId}/crop`;
+}
+
+export function submitReview(
+  id: string,
+  corrections: CellCorrection[],
+  acceptRemaining = false,
+): Promise<ReviewResponse> {
+  return request<ReviewResponse>(`/jobs/${id}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      corrections,
+      accept_remaining: acceptRemaining,
+    }),
+  });
 }

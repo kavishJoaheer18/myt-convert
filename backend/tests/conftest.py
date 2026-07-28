@@ -1,14 +1,29 @@
-"""Shared test wiring: a job workspace per test and the end-of-run summary."""
+"""Shared test wiring.
+
+The test database and data directory are configured here, before anything
+imports application code, because settings are cached process-wide and the
+engine is built from them. Doing it in an individual test module would work only
+for whichever module pytest happened to import first.
+"""
 
 from __future__ import annotations
 
+import os
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Iterator
 
 import pytest
 
-from tests.accuracy import AccuracyReport, format_summary
+_TMP_ROOT = Path(tempfile.mkdtemp(prefix="gridlock_tests_"))
+os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///{(_TMP_ROOT / 'test.db').as_posix()}"
+os.environ["DATA_DIR"] = str(_TMP_ROOT / "data")
+# Consensus is exercised with explicit test doubles; it must not fire on its own
+# during unrelated API tests.
+os.environ["ENABLE_CONSENSUS"] = "false"
+
+from tests.accuracy import AccuracyReport, format_summary  # noqa: E402
 
 #: Reports collected by every phase's tests, printed once the session ends.
 _REPORTS: dict[str, list[AccuracyReport]] = {}
@@ -39,6 +54,34 @@ def ocr_engine():
     from app.pipeline.extract_ocr import PaddleOcrEngine
 
     return PaddleOcrEngine()
+
+
+@pytest.fixture(scope="session")
+def api_client() -> Iterator["TestClient"]:  # noqa: F821
+    """A TestClient over the real app, backed by the temporary SQLite database."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.models.db import init_db, reset_engine
+
+    reset_engine()
+    init_db()
+    with TestClient(app) as client:
+        yield client
+
+
+@pytest.fixture()
+def synchronous_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run conversions inline instead of handing them to Celery."""
+    import app.worker as worker_module
+    from app.services import run_conversion
+
+    class _Inline:
+        @staticmethod
+        def delay(job_id: str) -> None:
+            run_conversion(job_id)
+
+    monkeypatch.setattr(worker_module, "convert_job", _Inline)
 
 
 @pytest.fixture()

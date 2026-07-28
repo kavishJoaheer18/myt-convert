@@ -148,6 +148,52 @@ recoverable, since the rule beneath the shading has no contrast.
 the API image runs without OpenCV or PaddlePaddle. The Phase 3 container run —
 core requirements plus LibreOffice, no OCR — is what keeps this honest.
 
+## Phase 4 — consensus and verification
+
+### A25. The model reviews the grid; it does not produce one
+`verify_page` is given the page image *and* the extracted cells with their
+bounding boxes, and returns only the cells it disputes. The alternative — asking
+the model to read the page into its own table and aligning that to ours — makes
+alignment the dominant source of error, and an alignment failure looks exactly
+like a disagreement. Reviewing keeps the VLM to the role the brief sets out:
+propose, vote, verify, never originate.
+
+### A26. A cell is only overwritten when two independent readers agree
+One dissenting voice is enough to *dispute* a cell and never enough to *rewrite*
+it. A value changes only when the OCR engine and the model, reading the
+magnified crop, agree with each other and against the original. Anything else
+becomes a Discrepancy for a human, because picking a winner on a single vote is
+how silent corruption gets into a spreadsheet.
+
+### A27. Zoom means re-rasterising, not upscaling
+The disputed region is redrawn from the PDF at 3.5× the working resolution
+rather than enlarged from the page image. Upscaling interpolates detail that was
+already lost, so a second look at the same pixels cannot see anything new.
+
+### A28. A missing VLM degrades, it does not fail
+When no provider is configured the conversion completes without a second
+opinion. A second opinion is valuable, not mandatory, and failing the job would
+make an unconfigured deployment useless.
+
+### A29. Corrections are rebuilt from the saved grid
+The structured grid is persisted as JSON beside the workbook, so a correction is
+applied to the structure and the verified workbook is produced by the same
+writer as the original. It therefore cannot differ except in the values a human
+changed — patching a saved .xlsx in place could not offer that guarantee.
+
+### A30. Consensus is tested with a deterministic double
+The gate asks whether consensus *detects disagreement*, which is a property of
+the mechanism rather than of any model's eyesight. A ground-truth stand-in
+isolates exactly that and keeps the suite reproducible and free. The Anthropic
+provider is implemented in full but is only exercised when an API key is
+present.
+
+### A31. CPU-first OCR models
+PaddleOCR defaults to its server models. They are roughly an order of magnitude
+slower on CPU for a small accuracy gain, which turned the zoom-and-re-ask step —
+one recognition call per disputed cell — into minutes of work per page. The
+mobile models are the default; `OCR_MODEL_VARIANT=server` opts back in.
+
 ## Cross-cutting
 
 ### A10. Accuracy counts spurious cells as errors

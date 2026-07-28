@@ -64,9 +64,14 @@ class PaddleOcrEngine:
     several seconds and a document has many pages.
     """
 
-    def __init__(self, lang: str = "en", use_gpu: bool = False) -> None:
+    def __init__(
+        self, lang: str = "en", use_gpu: bool = False, variant: str | None = None
+    ) -> None:
+        from app.config import get_settings
+
         self._lang = lang
         self._use_gpu = use_gpu
+        self._variant = (variant or get_settings().ocr_model_variant).lower()
         self._ocr: object | None = None
 
     def _engine(self) -> object:
@@ -74,9 +79,18 @@ class PaddleOcrEngine:
             # Imported lazily: the API image does not install PaddleOCR.
             from paddleocr import PaddleOCR
 
-            logger.info("loading PaddleOCR", extra={"lang": self._lang})
+            variant = "server" if self._variant == "server" else "mobile"
+            logger.info(
+                "loading PaddleOCR", extra={"lang": self._lang, "variant": variant}
+            )
             self._ocr = PaddleOCR(
                 lang=self._lang,
+                # PaddleOCR picks the server models by default. They are roughly
+                # an order of magnitude slower on CPU, which turns the
+                # zoom-and-re-ask step — one recognition call per disputed cell —
+                # into minutes of work for a single page.
+                text_detection_model_name=f"PP-OCRv5_{variant}_det",
+                text_recognition_model_name=f"PP-OCRv5_{variant}_rec",
                 # Orientation and unwarping are handled by our own preprocessing,
                 # and running them twice costs time and can fight each other.
                 use_doc_orientation_classify=False,

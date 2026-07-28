@@ -6,6 +6,7 @@ test or a shell without a broker running.
 
 from __future__ import annotations
 
+import logging
 import shutil
 from pathlib import Path
 
@@ -14,10 +15,16 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.logging_config import job_logger
-from app.models.db import Cell, Job, JobStatus, Page, new_session
+from app.models.db import Cell, Discrepancy, Job, JobStatus, Page, new_session
 from app.models.grid import DocumentGrid
+from app.pipeline.consensus import run_consensus
 from app.pipeline.convert import ConversionResult, convert_pdf
+from app.pipeline.excel_writer import write_workbook
 from app.pipeline.types import infer_value
+from app.review import save_grid
+from app.vlm.base import VLMUnavailable, get_provider
+
+logger = logging.getLogger(__name__)
 
 
 def create_job(session: Session, filename: str, upload: Path) -> Job:
@@ -73,6 +80,66 @@ def _persist_document(session: Session, job: Job, document: DocumentGrid) -> Non
             )
 
 
+def _cross_check(
+    session: Session,
+    job: Job,
+    source: Path,
+    result: ConversionResult,
+    job_dir: Path,
+) -> int:
+    """Run the consensus pass, if a provider is configured.
+
+    A missing or unreachable provider degrades to a plain conversion rather than
+    a failed job: a second opinion is valuable, not mandatory. Returns the number
+    of disputes left for a human.
+    """
+    settings = get_settings()
+    if not settings.enable_consensus:
+        return 0
+
+    try:
+        provider = get_provider()
+    except VLMUnavailable as exc:
+        logger.info("consensus skipped", extra={"job_id": job.id, "reason": str(exc)})
+        return 0
+
+    if not provider.is_available():
+        logger.info(
+            "consensus skipped",
+            extra={"job_id": job.id, "reason": f"{provider.name} provider not configured"},
+        )
+        return 0
+
+    consensus = run_consensus(
+        source,
+        result.document,
+        provider,
+        crop_dir=job_dir / "crops",
+        dpi=settings.render_dpi,
+    )
+
+    if consensus.corrected:
+        # Cells the second look settled have changed, so the workbook the user
+        # downloads must be rewritten from the corrected grid.
+        write_workbook(result.document, result.output_path)
+
+    for dispute in consensus.open_disputes:
+        session.add(
+            Discrepancy(
+                job_id=job.id,
+                page_number=dispute.page_number,
+                row=dispute.row,
+                col=dispute.col,
+                deterministic_value=dispute.deterministic_value,
+                vlm_value=dispute.vlm_value,
+                crop_path=dispute.crop_path,
+                confidence=dispute.confidence,
+            )
+        )
+
+    return len(consensus.open_disputes)
+
+
 def run_conversion(job_id: str) -> ConversionResult | None:
     """Convert one job's PDF and record the outcome.
 
@@ -97,19 +164,26 @@ def run_conversion(job_id: str) -> ConversionResult | None:
             raise FileNotFoundError(f"source PDF missing at {source}")
 
         log.info("conversion started", extra={"source": str(source)})
-        result = convert_pdf(source, settings.job_dir(job_id), job_id)
+        job_dir = settings.job_dir(job_id)
+        result = convert_pdf(source, job_dir, job_id)
+
+        open_disputes = _cross_check(session, job, source, result, job_dir)
 
         _persist_document(session, job, result.document)
+        save_grid(result.document, job_dir)
 
         job.output_path = str(result.output_path)
         job.page_count = len(result.document.sheets)
         job.cell_count = result.total_cells
         job.duration_ms = result.duration_ms
-        job.status = JobStatus.DONE
+        job.status = JobStatus.NEEDS_REVIEW if open_disputes else JobStatus.DONE
         job.error = None
         session.commit()
 
-        log.info("conversion succeeded", extra={"cells": job.cell_count})
+        log.info(
+            "conversion succeeded",
+            extra={"cells": job.cell_count, "open_disputes": open_disputes},
+        )
         return result
 
     except Exception as exc:  # noqa: BLE001 - the failure must reach the user

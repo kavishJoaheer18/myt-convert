@@ -15,7 +15,7 @@ from pathlib import Path
 import fitz
 import numpy as np
 
-from app.models.geometry import POINTS_PER_INCH
+from app.models.geometry import BBox, POINTS_PER_INCH
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +57,24 @@ def render_page(page: fitz.Page, dpi: int = 300) -> PageRender:
         width_pt=float(page.rect.width),
         height_pt=float(page.rect.height),
     )
+
+
+def render_region(page: fitz.Page, region: "BBox", dpi: int) -> np.ndarray:
+    """Rasterise one region of a page at the given resolution.
+
+    Re-rasterising from the PDF beats upscaling a crop of the page image: the
+    glyphs are redrawn at the higher resolution instead of being interpolated,
+    which is the whole point of looking again at a disputed cell.
+    """
+    clip = fitz.Rect(region.x0, region.top, region.x1, region.bottom) & page.rect
+    if clip.is_empty:
+        return np.zeros((1, 1, 3), dtype=np.uint8)
+
+    pixmap = page.get_pixmap(dpi=dpi, alpha=False, colorspace=fitz.csRGB, clip=clip)
+    image = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(
+        pixmap.height, pixmap.width, 3
+    )
+    return np.array(image)
 
 
 def render_document(pdf_path: Path, dpi: int = 300) -> list[PageRender]:

@@ -16,12 +16,16 @@ from app.config import get_settings
 from app.models.db import Job, JobStatus
 from app.models.schemas import (
     CellOut,
+    DiscrepancyOut,
     JobCreated,
     JobDetail,
     JobSummary,
     PageSummary,
+    ReviewRequest,
+    ReviewResponse,
     SheetOut,
 )
+from app.review import apply_corrections
 from app.services import create_job, list_jobs
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -29,6 +33,8 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 _XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 #: Uploads above this size are rejected before anything touches the disk.
 _MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+#: Screen resolution for the review view; the OCR path renders at a higher DPI.
+_REVIEW_DPI = 144
 
 
 def _load_job(session: Session, job_id: str) -> Job:
@@ -52,7 +58,7 @@ def _to_detail(job: Job) -> JobDetail:
         has_output=bool(job.output_path and Path(job.output_path).exists()),
         has_verified_output=bool(job.verified_path and Path(job.verified_path).exists()),
         pages=[PageSummary.model_validate(p) for p in job.pages],
-        discrepancies=[],
+        discrepancies=[DiscrepancyOut.model_validate(d) for d in job.discrepancies],
     )
 
 
@@ -149,6 +155,83 @@ def download(
     suffix = "-verified" if verified else ""
     return FileResponse(
         path, media_type=_XLSX_MEDIA_TYPE, filename=f"{stem}{suffix}.xlsx"
+    )
+
+
+@router.get("/{job_id}/pages/{page_number}/image")
+def page_image(
+    job_id: str, page_number: int, session: Session = Depends(get_session)
+) -> FileResponse:
+    """The source page as a PNG, for the side-by-side review view.
+
+    Rendered on first request and cached in the job directory, so opening the
+    review page does not re-rasterise a document every time.
+    """
+    job = _load_job(session, job_id)
+    if not any(p.page_number == page_number for p in job.pages):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"page {page_number} not found")
+
+    cached = get_settings().job_dir(job_id) / "renders" / f"page{page_number}.png"
+    if not cached.exists():
+        source = Path(job.source_path or "")
+        if not source.exists():
+            raise HTTPException(status.HTTP_410_GONE, "source PDF is no longer on disk")
+
+        import fitz
+
+        from app.pipeline.render import render_page, save_render
+
+        with fitz.open(source) as document:
+            if page_number > len(document):
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "page out of range")
+            save_render(render_page(document[page_number - 1], dpi=_REVIEW_DPI), cached)
+
+    return FileResponse(cached, media_type="image/png")
+
+
+@router.get("/{job_id}/discrepancies/{discrepancy_id}/crop")
+def discrepancy_crop(
+    job_id: str, discrepancy_id: str, session: Session = Depends(get_session)
+) -> FileResponse:
+    """The magnified crop of a disputed cell."""
+    job = _load_job(session, job_id)
+    discrepancy = next((d for d in job.discrepancies if d.id == discrepancy_id), None)
+    if discrepancy is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "discrepancy not found")
+    if not discrepancy.crop_path or not Path(discrepancy.crop_path).exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no crop for this discrepancy")
+
+    return FileResponse(discrepancy.crop_path, media_type="image/png")
+
+
+@router.post("/{job_id}/review", response_model=ReviewResponse)
+def submit_review(
+    job_id: str, request: ReviewRequest, session: Session = Depends(get_session)
+) -> ReviewResponse:
+    """Apply human corrections and rebuild the verified workbook."""
+    job = _load_job(session, job_id)
+
+    if job.status == JobStatus.FAILED:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, f"job failed: {job.error or 'unknown error'}"
+        )
+
+    try:
+        applied, remaining = apply_corrections(
+            session,
+            job,
+            get_settings().job_dir(job_id),
+            request.corrections,
+            accept_remaining=request.accept_remaining,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+
+    return ReviewResponse(
+        job_id=job.id,
+        status=JobStatus(job.status),
+        applied=applied,
+        remaining_discrepancies=remaining,
     )
 
 

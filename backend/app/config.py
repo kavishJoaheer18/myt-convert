@@ -28,6 +28,18 @@ class Settings(BaseSettings):
     min_chars_for_digital: int = 20
     #: Raster resolution for OCR and for verification renders.
     render_dpi: int = 300
+    #: "mobile" or "server". PaddleOCR defaults to the server models, which are
+    #: an order of magnitude slower on CPU for a small accuracy gain; the
+    #: deployment target here is CPU-only, so mobile is the sane default.
+    ocr_model_variant: str = "mobile"
+
+    # --- Consensus (Phase 4) -----------------------------------------------
+    #: Cross-check every conversion against the VLM. Turned off automatically
+    #: when no provider is configured, so a missing key degrades to a plain
+    #: conversion rather than a failed job.
+    enable_consensus: bool = True
+    #: SSIM below which a rendered sheet counts as structurally diverged.
+    visual_similarity_threshold: float = 0.50
 
     # --- VLM ---------------------------------------------------------------
     vlm_provider: str = "anthropic"

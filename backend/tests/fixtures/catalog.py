@@ -7,6 +7,8 @@ that merely looks numeric.
 
 from __future__ import annotations
 
+import os
+import tempfile
 from functools import lru_cache
 from pathlib import Path
 
@@ -21,7 +23,14 @@ from tests.fixtures.generate import (
 )
 from tests.fixtures.ground_truth import Fixture
 
-GENERATED_DIR = Path(__file__).parent / "generated"
+#: Where rendered fixtures land. Outside the repository by default: the tree may
+#: sit in a synced folder (OneDrive, Dropbox), and a sync client holding a
+#: generated PDF open makes the next run fail to overwrite it. They are
+#: regenerated deterministically, so nothing is lost by keeping them in temp.
+GENERATED_DIR = Path(
+    os.environ.get("GRIDLOCK_FIXTURE_DIR")
+    or Path(tempfile.gettempdir()) / "gridlock-fixtures"
+)
 
 
 def _simple_table_page() -> PageSpec:
