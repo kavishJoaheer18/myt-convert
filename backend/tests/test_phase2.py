@@ -20,7 +20,7 @@ from app.pipeline.preprocess import binarize, estimate_skew, preprocess_page
 from app.pipeline.raster_lines import detect_rulings
 from app.pipeline.render import render_document
 from tests.accuracy import compare_workbook
-from tests.conftest import record_report
+from tests.conftest import record_report, requires_ocr
 from tests.fixtures.catalog import GENERATED_DIR, SPECS, get_fixture
 from tests.fixtures.rasterize import rasterize_fixture
 
@@ -30,28 +30,6 @@ MIN_ACCURACY = 0.98
 SCAN_DPI = 300
 
 FIXTURE_NAMES = sorted(SPECS)
-
-
-def _paddle_available() -> bool:
-    try:
-        import paddleocr  # noqa: F401
-    except ImportError:
-        return False
-    return True
-
-
-requires_ocr = pytest.mark.skipif(
-    not _paddle_available(),
-    reason="PaddleOCR is not installed; install requirements-ocr.txt to run the OCR gate",
-)
-
-
-@pytest.fixture(scope="module")
-def ocr_engine():
-    """One recognition model shared by the whole module; loading it is slow."""
-    from app.pipeline.extract_ocr import PaddleOcrEngine
-
-    return PaddleOcrEngine()
 
 
 def _scanned(name: str, **kwargs: object):

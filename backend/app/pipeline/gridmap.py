@@ -26,7 +26,9 @@ from dataclasses import dataclass, field
 from app.models.content import PageContent, Ruling, Word
 from app.models.geometry import BBox
 from app.models.grid import GridCell, SheetGrid
+from app.pipeline.colors import is_near_white
 from app.pipeline.images import anchor_images
+from app.pipeline.styles import apply_styles
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +77,16 @@ class TextLine:
     @property
     def bbox(self) -> BBox:
         return BBox.union(w.bbox for w in self.words)
+
+
+@dataclass
+class _Band:
+    """A candidate row, and whether the page actually drew its edges."""
+
+    top: float
+    bottom: float
+    top_ruled: bool = False
+    bottom_ruled: bool = False
 
 
 def _cluster_positions(values: list[float], tol: float = BOUNDARY_TOL) -> list[float]:
@@ -365,51 +377,85 @@ def build_row_boundaries(page: PageContent, lines: list[TextLine], content: BBox
     """
     horizontals = _significant_rulings(page.rulings, "h", page.width)
     verticals = _significant_rulings(page.rulings, "v", page.height)
-    ruled_edges = _cluster_positions([r.position for r in horizontals])
+
+    # A shaded rectangle's edges bound a row just as a drawn rule does, and on a
+    # scan they may be the only evidence left: a dark fill hides the very line
+    # that would otherwise delimit the row it shades.
+    fill_edges: list[float] = []
+    for rect in page.rects:
+        if rect.fill_color and not is_near_white(rect.fill_color):
+            fill_edges.extend((rect.bbox.top, rect.bbox.bottom))
+
+    ruled_edges = _cluster_positions([r.position for r in horizontals] + fill_edges)
     ruled_edges = [
         y for y in ruled_edges if content.top - BOUNDARY_TOL <= y <= content.bottom + BOUNDARY_TOL
     ]
 
-    bands: list[tuple[float, float]] = []
+    # Each band records whether its edges came from a ruling, because a ruled
+    # edge is a fact about the page and must survive as the row boundary.
+    bands: list[_Band] = []
     for i in range(len(ruled_edges) - 1):
         top, bottom = ruled_edges[i], ruled_edges[i + 1]
         if bottom - top >= MIN_BAND_SIZE and _band_is_real(top, bottom, verticals, lines):
-            bands.append((top, bottom))
+            bands.append(_Band(top=top, bottom=bottom, top_ruled=True, bottom_ruled=True))
 
-    def covered(line: TextLine) -> bool:
-        return any(top <= line.bbox.cy < bottom for top, bottom in bands)
+    def covered(centre: float) -> bool:
+        return any(band.top <= centre < band.bottom for band in bands)
 
     for line in lines:
-        if not covered(line):
-            bands.append((line.bbox.top, line.bbox.bottom))
+        if not covered(line.bbox.cy):
+            bands.append(_Band(top=line.bbox.top, bottom=line.bbox.bottom))
 
     # An image occupies vertical space just as text does; without a row of its
     # own it would be anchored into whichever neighbouring row it happened to
     # touch and the page would lose a band of its layout.
     for image in page.images:
         box = image.bbox
-        if not any(top <= box.cy < bottom for top, bottom in bands):
-            bands.append((box.top, box.bottom))
+        if not covered(box.cy):
+            bands.append(_Band(top=box.top, bottom=box.bottom))
 
     if not bands:
         return [content.top, content.bottom]
 
-    bands.sort()
-    merged: list[tuple[float, float]] = [bands[0]]
-    for top, bottom in bands[1:]:
-        prev_top, prev_bottom = merged[-1]
-        if top < prev_bottom - BOUNDARY_TOL:
+    bands.sort(key=lambda b: (b.top, b.bottom))
+    merged: list[_Band] = [bands[0]]
+    for band in bands[1:]:
+        previous = merged[-1]
+        if band.top < previous.bottom - BOUNDARY_TOL:
             # Overlapping bands (a text line straddling a ruling) become one row.
-            merged[-1] = (prev_top, max(prev_bottom, bottom))
+            merged[-1] = _Band(
+                top=previous.top,
+                bottom=max(previous.bottom, band.bottom),
+                top_ruled=previous.top_ruled,
+                bottom_ruled=band.bottom_ruled
+                if band.bottom >= previous.bottom
+                else previous.bottom_ruled,
+            )
         else:
-            merged.append((top, bottom))
+            merged.append(band)
 
-    boundaries = [min(content.top, merged[0][0])]
+    boundaries = [min(content.top, merged[0].top)]
     for index in range(len(merged) - 1):
-        boundaries.append((merged[index][1] + merged[index + 1][0]) / 2.0)
-    boundaries.append(max(content.bottom, merged[-1][1]))
+        boundaries.append(_boundary_between(merged[index], merged[index + 1]))
+    boundaries.append(max(content.bottom, merged[-1].bottom))
 
     return _prune_boundaries(boundaries)
+
+
+def _boundary_between(upper: _Band, lower: _Band) -> float:
+    """Where the row boundary falls between two consecutive bands.
+
+    A ruled edge wins outright: the boundary must coincide with the line the
+    producer drew, or the row's rectangle stops matching the cell's borders and
+    its background fill, and both are then lost.  Only when neither side is ruled
+    is the whitespace split down the middle, which keeps the page's vertical
+    proportions without inventing a spacer row.
+    """
+    if lower.top_ruled:
+        return lower.top
+    if upper.bottom_ruled:
+        return upper.bottom
+    return (upper.bottom + lower.top) / 2.0
 
 
 # --- Cell assembly ----------------------------------------------------------
@@ -631,13 +677,15 @@ def build_sheet_grid(page: PageContent, title: str | None = None) -> SheetGrid:
         page_height_pt=page.height,
     )
 
+    apply_styles(grid, page, col_bounds, row_bounds)
+
     logger.info(
         "built sheet grid",
         extra={
             "page": page.page_number,
             "rows": n_rows,
             "cols": n_cols,
-            "cells": len(cells),
+            "cells": len(grid.cells),
             "ruled": bool(_column_edges_from_rulings(page)),
         },
     )

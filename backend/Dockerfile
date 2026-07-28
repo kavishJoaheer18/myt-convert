@@ -27,6 +27,22 @@ EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 
+# A test image for the checks that need LibreOffice but not OCR: it renders the
+# produced workbooks back to PDF, which is the only way to know a real
+# spreadsheet application accepts them.
+FROM base AS verify
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libreoffice-calc \
+        fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY tests ./tests
+
+CMD ["pytest", "tests/test_phase3.py", "-p", "no:cacheprovider"]
+
+
 FROM base AS worker
 
 # libgl1/libglib2.0 are OpenCV's runtime dependencies; LibreOffice renders the

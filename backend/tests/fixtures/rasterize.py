@@ -18,7 +18,7 @@ import fitz
 import numpy as np
 from PIL import Image
 
-from tests.fixtures.ground_truth import Fixture
+from tests.fixtures.ground_truth import ExpectedSheet, Fixture
 
 
 def _degrade(image: np.ndarray, skew_degrees: float, noise_sigma: float) -> np.ndarray:
@@ -75,5 +75,21 @@ def rasterize_fixture(
         fixture,
         name=f"{fixture.name}{suffix}",
         pdf_path=output_path,
+        sheets=[_without_font_style(sheet) for sheet in fixture.sheets],
         description=f"{fixture.description} (rasterised at {dpi} DPI)",
+    )
+
+
+def _without_font_style(sheet: ExpectedSheet) -> ExpectedSheet:
+    """Drop the style expectations a raster genuinely cannot answer.
+
+    A scan carries no font metadata — nothing in the pixels says which typeface
+    was used or whether it was bold — so asserting typography against a scanned
+    fixture would be testing for something the format does not contain.  Values,
+    positions, spans and fills are all still asserted.
+    """
+    # Picture count is deliberately left alone: figure detection is expected to
+    # recover the same images from the raster that the digital path extracted.
+    return replace(
+        sheet, cells=[replace(cell, assert_style=False) for cell in sheet.cells]
     )

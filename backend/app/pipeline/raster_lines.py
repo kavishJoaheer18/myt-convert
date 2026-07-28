@@ -16,8 +16,9 @@ import logging
 import cv2
 import numpy as np
 
-from app.models.content import Ruling
-from app.models.geometry import POINTS_PER_INCH
+from app.models.content import RectDrawing, Ruling
+from app.models.geometry import BBox, POINTS_PER_INCH
+from app.pipeline.colors import is_near_white
 
 logger = logging.getLogger(__name__)
 
@@ -179,15 +180,166 @@ def detect_figures(
     min_px = max(8, int(min_size_pt * dpi / POINTS_PER_INCH))
     figures: list[tuple[int, int, int, int]] = []
 
+    def holds_text(x: int, y: int, w: int, h: int) -> bool:
+        """True when recognised text sits within this region."""
+        return any(
+            x <= (bx0 + bx1) / 2.0 <= x + w and y <= (btop + bbottom) / 2.0 <= y + h
+            for bx0, btop, bx1, bbottom in text_boxes_px
+        )
+
     for x, y, w, h, area in _components(mask):
         if w < min_px or h < min_px:
             continue
         if area < w * h * min_fill_ratio:
             continue
+        # Ink with words on top of it is a shaded region, not a picture — a
+        # filled header row would otherwise be cropped out as an image.
+        if holds_text(x, y, w, h):
+            continue
         figures.append((x, y, w, h))
 
     logger.info("detected figures in raster", extra={"count": len(figures)})
     return figures
+
+
+def detect_filled_blocks(
+    binary: np.ndarray,
+    dpi: int,
+    min_width_pt: float = 30.0,
+    min_height_pt: float = 8.0,
+    max_height_pt: float = 60.0,
+    min_fill_ratio: float = 0.55,
+) -> list[tuple[int, int, int, int]]:
+    """Find solid shaded bands — a filled header row and the like.
+
+    These matter because a dark fill hides the very rules that would otherwise
+    bound the cell: a black line on a navy background has no contrast, and
+    morphology sees one thick block rather than a rule. Without detecting the
+    block itself, a shaded header's colour is unrecoverable.
+    """
+    px_per_pt = dpi / POINTS_PER_INCH
+    min_w = int(min_width_pt * px_per_pt)
+    min_h = int(min_height_pt * px_per_pt)
+    max_h = int(max_height_pt * px_per_pt)
+
+    blocks: list[tuple[int, int, int, int]] = []
+    for x, y, w, h, area in _components(binary):
+        if w < min_w or not (min_h <= h <= max_h):
+            continue
+        # Solid, allowing for the holes that reversed-out glyphs punch in it.
+        if area < w * h * min_fill_ratio:
+            continue
+        blocks.append((x, y, w, h))
+
+    return blocks
+
+
+def _sample_median_hex(color: np.ndarray, x0: int, y0: int, x1: int, y1: int) -> str | None:
+    """Per-channel median colour of a region, or ``None`` if it is degenerate.
+
+    A median reports the background even with glyphs sitting on top of it, since
+    the text is a minority of the pixels.
+    """
+    if y1 - y0 < 2 or x1 - x0 < 2:
+        return None
+    patch = color[y0:y1, x0:x1].reshape(-1, color.shape[2])
+    median = np.median(patch, axis=0)
+    return f"{int(median[0]):02X}{int(median[1]):02X}{int(median[2]):02X}"
+
+
+def sample_cell_fills(
+    color: np.ndarray,
+    rulings: list[Ruling],
+    dpi: int,
+    exclude_px: list[tuple[int, int, int, int]] | None = None,
+    inset_pt: float = 1.5,
+) -> list[RectDrawing]:
+    """Recover cell background colours from a scanned page.
+
+    A digital PDF states its fills as drawing operators; a scan only shows them.
+    Two sources are combined: every rectangle of the ruling grid, and any solid
+    shaded band whose own borders the shading has hidden. Near-white results are
+    discarded, because an unshaded cell has no fill to reproduce.
+
+    ``exclude_px`` lists regions already claimed as pictures, which must not be
+    turned into a background colour as well.
+    """
+    px_per_pt = dpi / POINTS_PER_INCH
+    height, width = color.shape[:2]
+    inset_px = max(1, int(round(inset_pt * px_per_pt)))
+    excluded = exclude_px or []
+    fills: list[RectDrawing] = []
+
+    def overlaps_excluded(x0: int, y0: int, x1: int, y1: int) -> bool:
+        for ex, ey, ew, eh in excluded:
+            if x0 < ex + ew and x1 > ex and y0 < ey + eh and y1 > ey:
+                return True
+        return False
+
+    # --- rectangles of the ruling grid ---
+    horizontals = sorted({r.position for r in rulings if r.orientation == "h"})
+    verticals = sorted({r.position for r in rulings if r.orientation == "v"})
+
+    if len(horizontals) >= 2 and len(verticals) >= 2:
+        for row in range(len(horizontals) - 1):
+            for col in range(len(verticals) - 1):
+                top_pt, bottom_pt = horizontals[row], horizontals[row + 1]
+                left_pt, right_pt = verticals[col], verticals[col + 1]
+
+                y0 = max(0, int(top_pt * px_per_pt) + inset_px)
+                y1 = min(height, int(bottom_pt * px_per_pt) - inset_px)
+                x0 = max(0, int(left_pt * px_per_pt) + inset_px)
+                x1 = min(width, int(right_pt * px_per_pt) - inset_px)
+                if overlaps_excluded(x0, y0, x1, y1):
+                    continue
+
+                hex_color = _sample_median_hex(color, x0, y0, x1, y1)
+                if hex_color is None or is_near_white(hex_color):
+                    continue
+                fills.append(
+                    RectDrawing(
+                        bbox=BBox(x0=left_pt, top=top_pt, x1=right_pt, bottom=bottom_pt),
+                        fill_color=hex_color,
+                    )
+                )
+
+    # --- solid shaded bands ---
+    # The rules must go first: they connect a shaded row to the rest of the
+    # table grid, so the component would otherwise be the whole table.
+    block_mask = erase_rulings(_ink_mask(color), rulings, dpi)
+    for x, y, w, h in detect_filled_blocks(block_mask, dpi):
+        if overlaps_excluded(x, y, x + w, y + h):
+            continue
+        hex_color = _sample_median_hex(
+            color, x + inset_px, y + inset_px, x + w - inset_px, y + h - inset_px
+        )
+        if hex_color is None or is_near_white(hex_color):
+            continue
+        fills.append(
+            RectDrawing(
+                bbox=BBox(
+                    x0=x / px_per_pt,
+                    top=y / px_per_pt,
+                    x1=(x + w) / px_per_pt,
+                    bottom=(y + h) / px_per_pt,
+                ),
+                fill_color=hex_color,
+            )
+        )
+
+    logger.info("sampled cell fills", extra={"count": len(fills)})
+    return fills
+
+
+def _ink_mask(color: np.ndarray) -> np.ndarray:
+    """Everything that is not paper, as a binary mask.
+
+    Deliberately not the preprocessed binary: that one is tuned to isolate
+    glyph strokes, whereas a shaded band has to be seen as the one solid region
+    it is.
+    """
+    gray = cv2.cvtColor(color, cv2.COLOR_RGB2GRAY) if color.ndim == 3 else color
+    return cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
 
 
 def text_mask(binary: np.ndarray, rulings_removed: bool = True) -> np.ndarray:

@@ -11,6 +11,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import fitz
 import pdfplumber
@@ -20,10 +21,11 @@ from app.models.content import PageContent, PageKind
 from app.models.grid import DocumentGrid, SheetGrid
 from app.pipeline.classify import PageClassification, classify_page
 from app.pipeline.extract_digital import extract_page
-from app.pipeline.extract_ocr import OcrEngine, PaddleOcrEngine, extract_page_ocr
 from app.pipeline.gridmap import build_sheet_grid
 from app.pipeline.excel_writer import write_workbook
-from app.pipeline.render import render_page
+
+if TYPE_CHECKING:
+    from app.pipeline.extract_ocr import OcrEngine
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +88,12 @@ def extract_pages(
             )
 
             if classification.kind is PageKind.SCANNED:
+                # Imported here, not at module scope: OCR pulls in OpenCV and
+                # PaddlePaddle, which the API image deliberately does not carry.
+                # A document of digital pages must convert without them.
+                from app.pipeline.extract_ocr import PaddleOcrEngine, extract_page_ocr
+                from app.pipeline.render import render_page
+
                 if engine is None:
                     engine = PaddleOcrEngine()
                 render = render_page(doc[index], dpi=resolution)

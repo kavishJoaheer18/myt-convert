@@ -23,7 +23,7 @@ from PIL import Image
 from app.models.content import ImageBlock, PageContent, PageKind, Ruling, TextSource, Word
 from app.models.geometry import BBox
 from app.pipeline.preprocess import PreprocessResult, preprocess_page
-from app.pipeline.raster_lines import detect_figures, detect_rulings
+from app.pipeline.raster_lines import detect_figures, detect_rulings, sample_cell_fills
 from app.pipeline.render import PageRender
 
 logger = logging.getLogger(__name__)
@@ -292,6 +292,27 @@ def extract_page_ocr(
         },
     )
 
+    rects = (
+        sample_cell_fills(
+            processed.color,
+            rulings,
+            resolution,
+            # Regions already recovered as pictures must not also become a
+            # background colour behind the cell they sit in.
+            exclude_px=[
+                (
+                    int(processed.pt_to_px(image.bbox.x0)),
+                    int(processed.pt_to_px(image.bbox.top)),
+                    int(processed.pt_to_px(image.bbox.width)),
+                    int(processed.pt_to_px(image.bbox.height)),
+                )
+                for image in images
+            ],
+        )
+        if processed.color is not None
+        else []
+    )
+
     return PageContent(
         page_number=render.page_number,
         width=render.width_pt,
@@ -299,6 +320,7 @@ def extract_page_ocr(
         kind=PageKind.SCANNED,
         words=words,
         rulings=rulings,
+        rects=rects,
         images=images,
     )
 

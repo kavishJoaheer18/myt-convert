@@ -28,6 +28,18 @@ class ExpectedCell:
     #: merge is a fact, whereas a heading's visual reach over empty space is not.
     assert_span: bool = True
 
+    # --- Phase 3 formatting expectations ---
+    italic: bool = False
+    #: sRGB hex without '#'.
+    font_color: str = "000000"
+    fill_color: str | None = None
+    #: "left", "center" or "right".
+    h_align: str = "left"
+    #: True when the source draws all four borders around this cell.
+    all_borders: bool = False
+    #: Formatting is asserted only for fixtures built to exercise it.
+    assert_style: bool = False
+
 
 @dataclass
 class ExpectedSheet:

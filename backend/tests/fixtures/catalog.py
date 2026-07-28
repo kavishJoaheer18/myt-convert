@@ -159,6 +159,40 @@ def _text_and_small_table_page() -> PageSpec:
     )
 
 
+def _formatted_report_page() -> PageSpec:
+    """Everything Phase 3 has to reproduce, on one page.
+
+    A shaded header in reversed-out white, an italic note row, per-column
+    alignment, and values in every type the inference layer claims to handle:
+    currency, percentages, dates, accounting negatives and plain numbers.
+    """
+    return PageSpec(
+        blocks=[
+            TextBlock("FINANCIAL SUMMARY", font_size=16.0, bold=True),
+            TableBlock(
+                rows=[
+                    ["Account", "Posted", "Amount", "Change"],
+                    ["Trading income", "2026-01-15", "$42,180.55", "12.5%"],
+                    ["Service revenue", "27 July 2026", "$8,904.10", "-4.2%"],
+                    ["Refunds issued", "Mar 3, 2026", "($1,204.75)", "0.8%"],
+                    ["Equipment lease", "2026-02-28", "MUR 60,000.00", "100%"],
+                    ["Provisional figures pending audit", "", "", ""],
+                ],
+                col_widths=[170.0, 120.0, 120.0, 70.0],
+                row_height=22.0,
+                bold_rows=(0,),
+                italic_rows=(5,),
+                row_fills={0: "1F3864"},
+                row_font_colors={0: "FFFFFF", 5: "808080"},
+                right_aligned_cols=(2, 3),
+                centered_cells=((0, 1),),
+                merges=[Merge(row=5, col=0, col_span=4)],
+                assert_style=True,
+            ),
+        ]
+    )
+
+
 SPECS: dict[str, FixtureSpec] = {
     "simple_table": FixtureSpec(
         name="simple_table",
@@ -179,6 +213,11 @@ SPECS: dict[str, FixtureSpec] = {
         name="borderless_table",
         pages=[_borderless_page()],
         description="Borderless table; columns inferred from whitespace alone.",
+    ),
+    "formatted_report": FixtureSpec(
+        name="formatted_report",
+        pages=[_formatted_report_page()],
+        description="Shaded header, italics, colour, alignment and every value type.",
     ),
     "mixed_5page": FixtureSpec(
         name="mixed_5page",

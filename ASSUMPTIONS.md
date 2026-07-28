@@ -106,6 +106,48 @@ text-line box height; the family falls back to the workbook default rather than
 being guessed, and bold/italic are not asserted. Phase 3 revisits what can be
 recovered from stroke weight.
 
+## Phase 3 — formatting fidelity
+
+### A18. A value is typed only if it round-trips character for character
+`infer_value` renders its own result back through `display_string` and falls
+back to plain text whenever the two differ. The rule is enforced rather than
+merely intended, because a cell that is silently wrong is worse than a cell that
+is merely untyped.
+
+### A19. Ambiguous dates stay text
+`01/02/2026` could be 1 February or 2 January and the page does not say which.
+A slash-separated date is typed only when the order is forced — one component
+above 12 — or when the format is unambiguous (ISO, or a spelled month). Guessing
+would corrupt the value in a way no later stage could detect.
+
+### A20. Percentages are stored as fractions
+Excel's percent format multiplies by 100 on display, so `12.5%` is stored as
+`0.125` with format `0.0%`. Storing 12.5 would display as `1250.0%`.
+
+### A21. A ruled row boundary is never moved
+Where a band's edge came from a ruling, that ruling *is* the row boundary; only
+the whitespace between two unruled bands is split down the middle. If the
+boundary drifts, the row's rectangle stops matching the cell's borders and its
+background fill, and both are then lost.
+
+### A22. A painted rectangle's edges bound a row
+Fill rectangles contribute row boundaries alongside rulings. On a scan this is
+sometimes the only evidence available: a dark fill hides the very rule that
+would delimit the row it shades.
+
+### A23. Scanned pages recover fills but not typography
+Cell background colour is sampled from the raster with a per-channel median,
+which reports the background even with glyphs on top of it. Bold, italic and
+font colour are *not* inferred from a scan — nothing in the pixels reliably says
+which typeface was used — so scanned fixtures assert values, positions, spans and
+fills, but not typography. Borders on a solidly shaded row are also not
+recoverable, since the rule beneath the shading has no contrast.
+
+### A24. OCR is imported lazily
+`convert.py` imports the OCR stack only when a scanned page actually appears, so
+the API image runs without OpenCV or PaddlePaddle. The Phase 3 container run —
+core requirements plus LibreOffice, no OCR — is what keeps this honest.
+
 ## Cross-cutting
 
 ### A10. Accuracy counts spurious cells as errors

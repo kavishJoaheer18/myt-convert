@@ -18,7 +18,7 @@ from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
 from app.pipeline.types import display_string
-from tests.fixtures.ground_truth import ExpectedSheet, Fixture
+from tests.fixtures.ground_truth import ExpectedCell, ExpectedSheet, Fixture
 
 
 @dataclass(frozen=True)
@@ -47,6 +47,7 @@ class AccuracyReport:
     structure_errors: list[str] = field(default_factory=list)
     span_errors: list[str] = field(default_factory=list)
     image_errors: list[str] = field(default_factory=list)
+    style_errors: list[str] = field(default_factory=list)
 
     @property
     def scored_cells(self) -> int:
@@ -65,6 +66,7 @@ class AccuracyReport:
             and not self.structure_errors
             and not self.span_errors
             and not self.image_errors
+            and not self.style_errors
         )
 
     def problems(self) -> list[str]:
@@ -72,6 +74,7 @@ class AccuracyReport:
             *self.structure_errors,
             *self.span_errors,
             *self.image_errors,
+            *self.style_errors,
             *(str(m) for m in self.mismatches),
         ]
 
@@ -103,6 +106,62 @@ def _occupied_positions(worksheet: Worksheet) -> set[tuple[int, int]]:
             if cell.value is not None and str(cell.value).strip():
                 found.add((cell.row - 1, cell.column - 1))
     return found
+
+
+def _argb_to_hex(color: object) -> str | None:
+    """Reduce openpyxl's colour object to plain 'RRGGBB', or None if unset."""
+    rgb = getattr(color, "rgb", None)
+    if not isinstance(rgb, str):
+        return None
+    return rgb[-6:].upper()
+
+
+def _check_style(
+    worksheet: Worksheet, cell: ExpectedCell, label: str, report: AccuracyReport
+) -> None:
+    """Assert the typography and decoration of one cell."""
+    actual = worksheet.cell(row=cell.row + 1, column=cell.col + 1)
+    position = f"{label}: r{cell.row}c{cell.col}"
+
+    if bool(actual.font.bold) != cell.bold:
+        report.style_errors.append(
+            f"{position} bold {bool(actual.font.bold)} != {cell.bold}"
+        )
+    if bool(actual.font.italic) != cell.italic:
+        report.style_errors.append(
+            f"{position} italic {bool(actual.font.italic)} != {cell.italic}"
+        )
+
+    font_color = _argb_to_hex(actual.font.color) or "000000"
+    if font_color != cell.font_color.upper():
+        report.style_errors.append(
+            f"{position} font colour {font_color} != {cell.font_color.upper()}"
+        )
+
+    fill_color = (
+        _argb_to_hex(actual.fill.start_color)
+        if actual.fill is not None and actual.fill.fill_type == "solid"
+        else None
+    )
+    expected_fill = cell.fill_color.upper() if cell.fill_color else None
+    if fill_color != expected_fill:
+        report.style_errors.append(
+            f"{position} fill {fill_color} != {expected_fill}"
+        )
+
+    if (actual.alignment.horizontal or "left") != cell.h_align:
+        report.style_errors.append(
+            f"{position} alignment {actual.alignment.horizontal} != {cell.h_align}"
+        )
+
+    if cell.all_borders:
+        missing = [
+            edge
+            for edge in ("left", "right", "top", "bottom")
+            if getattr(actual.border, edge).style is None
+        ]
+        if missing:
+            report.style_errors.append(f"{position} missing borders: {missing}")
 
 
 def compare_sheet(
@@ -139,6 +198,9 @@ def compare_sheet(
             report.mismatches.append(
                 CellMismatch(label, cell.row, cell.col, cell.text, actual, reason)
             )
+
+        if cell.assert_style:
+            _check_style(worksheet, cell, label, report)
 
         if cell.assert_span:
             actual_span = spans.get(position, (1, 1))

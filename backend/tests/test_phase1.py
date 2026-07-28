@@ -93,7 +93,7 @@ def test_column_widths_track_the_source_proportions(job_dir: Path) -> None:
         # A leading zero is an identifier, not a quantity, and must survive.
         ("007", "007", "General"),
         ("PL01", "PL01", "General"),
-        ("27 July 2026", "27 July 2026", "General"),
+        ("Invoice INV-1042", "Invoice INV-1042", "General"),
     ],
 )
 def test_type_inference_preserves_display(

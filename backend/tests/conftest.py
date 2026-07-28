@@ -18,6 +18,29 @@ def record_report(phase: str, report: AccuracyReport) -> None:
     _REPORTS.setdefault(phase, []).append(report)
 
 
+def paddle_available() -> bool:
+    """Whether the OCR stack is installed in this environment."""
+    try:
+        import paddleocr  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+requires_ocr = pytest.mark.skipif(
+    not paddle_available(),
+    reason="PaddleOCR is not installed; install requirements-ocr.txt to run the OCR gate",
+)
+
+
+@pytest.fixture(scope="session")
+def ocr_engine():
+    """One recognition model for the whole session; loading it is slow."""
+    from app.pipeline.extract_ocr import PaddleOcrEngine
+
+    return PaddleOcrEngine()
+
+
 @pytest.fixture()
 def job_dir(tmp_path: Path) -> Iterator[Path]:
     """An isolated per-test job directory, mirroring ``data/{job_id}/``."""

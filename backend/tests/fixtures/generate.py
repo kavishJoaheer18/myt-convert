@@ -87,6 +87,15 @@ class TableBlock:
     centered_cells: tuple[tuple[int, int], ...] = ()
     right_aligned_cells: tuple[tuple[int, int], ...] = ()
 
+    # --- formatting, exercised by the Phase 3 fixtures ---
+    italic_rows: tuple[int, ...] = ()
+    #: Row index to background colour, as an 'RRGGBB' hex string.
+    row_fills: dict[int, str] = field(default_factory=dict)
+    #: Row index to text colour, as an 'RRGGBB' hex string.
+    row_font_colors: dict[int, str] = field(default_factory=dict)
+    #: Set when the fixture's formatting is meant to be asserted.
+    assert_style: bool = False
+
     @property
     def n_rows(self) -> int:
         return len(self.rows)
@@ -229,7 +238,38 @@ def _draw_table_borders(pdf: canvas.Canvas, table: TableBlock, left: float, top:
                          x, _flip(top + (row + 1) * table.row_height))
 
 
+def _hex_to_rgb(value: str) -> tuple[float, float, float]:
+    return tuple(int(value[i : i + 2], 16) / 255.0 for i in (0, 2, 4))  # type: ignore[return-value]
+
+
+def _font_for(bold: bool, italic: bool) -> str:
+    if bold and italic:
+        return "Helvetica-BoldOblique"
+    if bold:
+        return FONT_BOLD
+    if italic:
+        return "Helvetica-Oblique"
+    return FONT_REGULAR
+
+
+def _draw_row_fills(pdf: canvas.Canvas, table: TableBlock, left: float, top: float) -> None:
+    """Paint row backgrounds before anything is drawn on top of them."""
+    edges = table.col_edges(left)
+    for row_index, color in table.row_fills.items():
+        pdf.setFillColorRGB(*_hex_to_rgb(color))
+        pdf.rect(
+            edges[0],
+            _flip(top + (row_index + 1) * table.row_height),
+            edges[-1] - edges[0],
+            table.row_height,
+            stroke=0,
+            fill=1,
+        )
+
+
 def _draw_table(pdf: canvas.Canvas, table: TableBlock, left: float, top: float) -> None:
+    if table.row_fills:
+        _draw_row_fills(pdf, table, left, top)
     if table.ruled:
         _draw_table_borders(pdf, table, left, top)
 
@@ -251,8 +291,13 @@ def _draw_table(pdf: canvas.Canvas, table: TableBlock, left: float, top: float) 
             cell_height = span_rows * table.row_height
 
             bold = row_index in table.bold_rows
-            pdf.setFont(FONT_BOLD if bold else FONT_REGULAR, table.font_size)
-            width = _string_width(text, table.font_size, bold)
+            italic = row_index in table.italic_rows
+            font = _font_for(bold, italic)
+            pdf.setFont(font, table.font_size)
+            pdf.setFillColorRGB(
+                *_hex_to_rgb(table.row_font_colors.get(row_index, "000000"))
+            )
+            width = pdfmetrics.stringWidth(text, font, table.font_size)
 
             if (row_index, col_index) in table.centered_cells:
                 x = cell_left + (cell_right - cell_left - width) / 2.0
@@ -357,6 +402,16 @@ def _expected_sheet(page: PageSpec, page_number: int, title: str) -> ExpectedShe
                     last = _boundary_index(
                         edges[min(col_index + span_cols, block.n_cols)], col_bounds
                     )
+
+                    if (row_index, col_index) in block.centered_cells:
+                        align = "center"
+                    elif (row_index, col_index) in block.right_aligned_cells or (
+                        col_index in block.right_aligned_cols
+                    ):
+                        align = "right"
+                    else:
+                        align = "left"
+
                     cells.append(
                         ExpectedCell(
                             row=row_cursor + row_index,
@@ -368,6 +423,12 @@ def _expected_sheet(page: PageSpec, page_number: int, title: str) -> ExpectedShe
                             font_size=block.font_size,
                             # Borders make a span a fact; whitespace does not.
                             assert_span=block.ruled,
+                            italic=row_index in block.italic_rows,
+                            font_color=block.row_font_colors.get(row_index, "000000"),
+                            fill_color=block.row_fills.get(row_index),
+                            h_align=align,
+                            all_borders=block.ruled,
+                            assert_style=block.assert_style,
                         )
                     )
             row_cursor += block.n_rows

@@ -38,6 +38,8 @@ class PreprocessResult:
     binary: np.ndarray
     skew_degrees: float
     dpi: int
+    #: Deskewed colour image, kept so cell background colours can be sampled.
+    color: np.ndarray | None = None
 
     @property
     def height(self) -> int:
@@ -173,11 +175,16 @@ def preprocess_page(image: np.ndarray, dpi: int) -> PreprocessResult:
     """Deskew, denoise and binarise one rendered page."""
     gray = to_grayscale(image)
     cleaned = denoise(gray)
+    color = image if image.ndim == 3 else None
 
     skew = estimate_skew(binarize(cleaned))
     if abs(skew) >= MIN_DESKEW_DEGREES:
         # Rotating the greyscale (not the binary) keeps antialiasing for OCR.
         cleaned = rotate(cleaned, skew, border=255)
+        if color is not None:
+            # The colour copy must stay pixel-aligned with the greyscale one, or
+            # background samples come from the wrong cell.
+            color = rotate(color, skew, border=255)
     else:
         skew = 0.0
 
@@ -187,4 +194,6 @@ def preprocess_page(image: np.ndarray, dpi: int) -> PreprocessResult:
         "preprocessed page",
         extra={"skew_degrees": round(skew, 3), "dpi": dpi, "shape": list(cleaned.shape)},
     )
-    return PreprocessResult(gray=cleaned, binary=binary, skew_degrees=skew, dpi=dpi)
+    return PreprocessResult(
+        gray=cleaned, binary=binary, skew_degrees=skew, dpi=dpi, color=color
+    )
