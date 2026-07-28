@@ -131,6 +131,26 @@ class TableBlock:
 
 
 @dataclass
+class ProseBlock:
+    """Justified body text: the thing most easily mistaken for a table.
+
+    Justification stretches inter-word spaces, and enough of those gaps can line
+    up between lines to punch a corridor straight through a paragraph. Each line
+    is drawn word by word at computed positions so the spacing is genuinely
+    stretched, exactly as a real typesetter would leave it.
+    """
+
+    lines: list[str]
+    width: float
+    font_size: float = 10.0
+    line_spacing: float = 14.0
+
+    @property
+    def height(self) -> float:
+        return len(self.lines) * self.line_spacing
+
+
+@dataclass
 class ImageSwatch:
     """A generated raster placed at the content's left edge."""
 
@@ -140,7 +160,7 @@ class ImageSwatch:
     color: tuple[int, int, int] = (30, 90, 160)
 
 
-Block = TextBlock | TableBlock | ImageSwatch
+Block = TextBlock | TableBlock | ImageSwatch | ProseBlock
 
 
 @dataclass
@@ -171,6 +191,27 @@ def _draw_text_block(pdf: canvas.Canvas, block: TextBlock, top: float) -> None:
     pdf.setFont(FONT_BOLD if block.bold else FONT_REGULAR, block.font_size)
     # Place the baseline one em below the block top so the glyphs sit inside it.
     pdf.drawString(CONTENT_LEFT, _flip(top + block.font_size), block.text)
+
+
+def _draw_prose(pdf: canvas.Canvas, block: ProseBlock, top: float) -> None:
+    """Draw justified lines, stretching the spaces to reach the right margin."""
+    pdf.setFont(FONT_REGULAR, block.font_size)
+    pdf.setFillColorRGB(0, 0, 0)
+
+    for index, line in enumerate(block.lines):
+        baseline = top + index * block.line_spacing + block.font_size
+        words = line.split()
+        if len(words) < 2 or index == len(block.lines) - 1:
+            # The last line of a paragraph is set flush left, not justified.
+            pdf.drawString(CONTENT_LEFT, _flip(baseline), line)
+            continue
+
+        text_width = sum(_string_width(w, block.font_size, False) for w in words)
+        gap = (block.width - text_width) / (len(words) - 1)
+        x = CONTENT_LEFT
+        for word in words:
+            pdf.drawString(x, _flip(baseline), word)
+            x += _string_width(word, block.font_size, False) + gap
 
 
 def _draw_swatch(pdf: canvas.Canvas, swatch: ImageSwatch, top: float, out_dir: Path) -> Path:
@@ -345,7 +386,7 @@ def _global_col_bounds(page: PageSpec) -> list[float]:
             right = max(right, CONTENT_LEFT + block.width)
         elif isinstance(block, TextBlock):
             right = max(right, CONTENT_LEFT + _string_width(block.text, block.font_size, block.bold))
-        elif isinstance(block, ImageSwatch):
+        elif isinstance(block, (ImageSwatch, ProseBlock)):
             right = max(right, CONTENT_LEFT + block.width)
 
     edges.append(right)
@@ -387,6 +428,21 @@ def _expected_sheet(page: PageSpec, page_number: int, title: str) -> ExpectedShe
         elif isinstance(block, ImageSwatch):
             n_images += 1
             row_cursor += 1
+
+        elif isinstance(block, ProseBlock):
+            # Prose must come out as one cell per line in column 0, not as a
+            # table; the width it visually reaches over is not a fact to assert.
+            for offset, line in enumerate(block.lines):
+                cells.append(
+                    ExpectedCell(
+                        row=row_cursor + offset,
+                        col=0,
+                        text=line,
+                        font_size=block.font_size,
+                        assert_span=False,
+                    )
+                )
+            row_cursor += len(block.lines)
 
         elif isinstance(block, TableBlock):
             edges = block.col_edges(CONTENT_LEFT)
@@ -467,6 +523,9 @@ def render_fixture(spec: FixtureSpec, out_dir: Path) -> Fixture:
                 top += block.height + BLOCK_GAP
             elif isinstance(block, ImageSwatch):
                 _draw_swatch(pdf, block, top, asset_dir)
+                top += block.height + BLOCK_GAP
+            elif isinstance(block, ProseBlock):
+                _draw_prose(pdf, block, top)
                 top += block.height + BLOCK_GAP
             elif isinstance(block, TableBlock):
                 _draw_table(pdf, block, CONTENT_LEFT, top)

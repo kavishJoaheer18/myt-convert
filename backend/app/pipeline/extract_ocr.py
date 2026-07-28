@@ -191,7 +191,7 @@ def _detection_to_word(detection: OcrDetection, processed: PreprocessResult) -> 
         bottom=processed.px_to_pt(detection.bottom),
     )
     return Word(
-        text=detection.text.strip(),
+        text=normalize_ocr_text(detection.text),
         bbox=box,
         # A scan carries no font metadata; size is inferred from the box and the
         # family is left to the workbook default rather than being invented.
@@ -341,7 +341,36 @@ def extract_page_ocr(
 
 _WHITESPACE = re.compile(r"\s+")
 
+#: PaddleOCR's recognition head is multilingual, so on a Latin-script page it
+#: occasionally returns the full-width (CJK) form of a punctuation mark. The
+#: glyph on the page was the ASCII one, and the difference is invisible to a
+#: reader but fatal to an exact-value comparison.
+_FULLWIDTH = str.maketrans(
+    {
+        "，": ",",
+        "。": ".",
+        "：": ":",
+        "；": ";",
+        "！": "!",
+        "？": "?",
+        "（": "(",
+        "）": ")",
+        "％": "%",
+        "＄": "$",
+        "－": "-",
+        "＝": "=",
+        "＋": "+",
+        "＃": "#",
+        "＠": "@",
+        "‘": "'",
+        "’": "'",
+        "“": '"',
+        "”": '"',
+        " ": " ",
+    }
+)
+
 
 def normalize_ocr_text(text: str) -> str:
-    """Collapse the whitespace OCR sprinkles into single spaces."""
-    return _WHITESPACE.sub(" ", text).strip()
+    """Collapse whitespace and fold full-width punctuation back to ASCII."""
+    return _WHITESPACE.sub(" ", text.translate(_FULLWIDTH)).strip()

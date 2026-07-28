@@ -17,6 +17,7 @@ from tests.fixtures.generate import (
     ImageSwatch,
     Merge,
     PageSpec,
+    ProseBlock,
     TableBlock,
     TextBlock,
     render_fixture,
@@ -202,6 +203,44 @@ def _formatted_report_page() -> PageSpec:
     )
 
 
+def _prose_page() -> PageSpec:
+    """Justified body text above a small table.
+
+    A real 33-page research paper exposed this: justified spacing lined up
+    across enough lines to punch whitespace corridors through a paragraph, and
+    the page came out as a ten-column "table" of shredded sentences. The prose
+    must stay one cell per line while the actual table below it is still found.
+    """
+    return PageSpec(
+        blocks=[
+            TextBlock("Box A: Quantum readiness", font_size=13.0, bold=True),
+            ProseBlock(
+                # Lines nearly fill the measure, so justification stretches the
+                # spaces only slightly — as a real typesetter would leave them.
+                lines=[
+                    "The project explored how central banks might migrate their core payment",
+                    "systems to post-quantum cryptography without interrupting settlement at",
+                    "any point. It emphasised the need for a broad readiness roadmap, taking",
+                    "in the upskilling of staff and a full inventory of the legacy systems that",
+                    "cannot be upgraded in place, and recommended a carefully staged plan.",
+                    "A staged transition was recommended by the working group.",
+                ],
+                width=396.0,
+            ),
+            TableBlock(
+                rows=[
+                    ["Phase", "Focus", "Status"],
+                    ["One", "Inventory", "complete"],
+                    ["Two", "Pilot migration", "ongoing"],
+                    ["Three", "Full rollout", "planned"],
+                ],
+                col_widths=[130.0, 200.0, 130.0],
+                bold_rows=(0,),
+            ),
+        ]
+    )
+
+
 SPECS: dict[str, FixtureSpec] = {
     "simple_table": FixtureSpec(
         name="simple_table",
@@ -227,6 +266,11 @@ SPECS: dict[str, FixtureSpec] = {
         name="formatted_report",
         pages=[_formatted_report_page()],
         description="Shaded header, italics, colour, alignment and every value type.",
+    ),
+    "justified_prose": FixtureSpec(
+        name="justified_prose",
+        pages=[_prose_page()],
+        description="Justified paragraphs that must not be read as columns.",
     ),
     "mixed_5page": FixtureSpec(
         name="mixed_5page",

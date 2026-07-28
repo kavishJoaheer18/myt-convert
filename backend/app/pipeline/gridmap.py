@@ -51,6 +51,12 @@ MIN_BAND_SIZE = 3.0
 CELL_OVERLAP_RATIO = 0.30
 #: A ruling must be at least this fraction of the page to define table geometry.
 MIN_RULING_PAGE_FRACTION = 0.04
+#: How far a column's text edges may scatter (pt) before it stops looking like a
+#: column. Cell padding is constant, so a real column's edges align to well under
+#: a couple of points; justified prose measured three to four times this.
+MAX_COLUMN_EDGE_SPREAD = 4.0
+#: Rows needed before a column's alignment is worth judging.
+MIN_ALIGNMENT_SAMPLES = 3
 
 
 @dataclass
@@ -185,7 +191,7 @@ def _split_line_for_row(
     line: TextLine,
     band_top: float,
     band_bottom: float,
-    col_bounds: list[float],
+    corridors: list[float],
     verticals: list[Ruling],
 ) -> list[TextRun]:
     """Split one line into cell-sized runs, using whatever evidence this row has.
@@ -193,17 +199,24 @@ def _split_line_for_row(
     Where the producer drew borders across this band, *those* borders delimit the
     cells and nothing else does — which is the only way a cell merged across four
     columns survives as one value instead of being torn along the column grid it
-    deliberately ignores.  Rows outside any ruled table fall back to the global
-    column boundaries and to plain whitespace.
+    deliberately ignores.
+
+    Rows outside any ruled table are split only at whitespace corridors that were
+    confirmed to run down the page — never at the sheet's global column
+    boundaries, and never at a bare gap.  Those boundaries may come from a table
+    elsewhere on the page, and applying them to a paragraph shreds its sentences
+    into columns that have nothing to do with it.  A wide gap alone is no better
+    evidence: justification stretches word spaces, and OCR reports a line in
+    fragments with gaps of its own making.
+
+    The rule is therefore that a line is only cut where something on the page
+    positively says a column boundary is there.
     """
     if not line.words:
         return []
 
     crossing = _crossing_verticals(band_top, band_bottom, verticals)
-    if len(crossing) >= 2:
-        separators, gap_limit = crossing, None
-    else:
-        separators, gap_limit = col_bounds, _coarse_gap_for_line(line)
+    separators = crossing if len(crossing) >= 2 else corridors
 
     runs: list[TextRun] = []
     current: list[Word] = []
@@ -212,10 +225,7 @@ def _split_line_for_row(
     for word in line.words:
         if previous is not None:
             gap_start, gap_end = previous.bbox.x1, word.bbox.x0
-            split = any(gap_start < s < gap_end for s in separators)
-            if gap_limit is not None and gap_end - gap_start > gap_limit:
-                split = True
-            if split:
+            if any(gap_start < s < gap_end for s in separators):
                 runs.append(TextRun(words=current))
                 current = []
         current.append(word)
@@ -308,7 +318,51 @@ def _column_edges_from_whitespace(
     if run_start is not None:
         separators.extend(_corridor_to_separator(run_start, n_bins - 1, step, content))
 
+    if separators and not _columns_are_aligned(candidates, separators, content):
+        return []
     return separators
+
+
+def _columns_are_aligned(
+    candidates: list[list[TextRun]], separators: list[float], content: BBox
+) -> bool:
+    """Do the proposed columns look like a table, or like justified prose?
+
+    In a table the values of a column start (or, for numbers, end) at very nearly
+    the same x on every row. In justified text the inter-word gaps drift from
+    line to line, and enough of them can coincide to punch a corridor clean
+    through a paragraph — which is how a page of prose ends up split into ten
+    "columns".
+
+    Requiring the edges to line up separates the two cases without needing to
+    know anything about the words themselves.
+    """
+    bounds = [content.x0, *separators, content.x1]
+    spreads: list[float] = []
+
+    for index in range(len(bounds) - 1):
+        low, high = bounds[index], bounds[index + 1]
+        lefts: list[float] = []
+        rights: list[float] = []
+
+        for runs in candidates:
+            inside = [r for r in runs if low <= r.bbox.cx < high]
+            if not inside:
+                continue
+            lefts.append(min(r.bbox.x0 for r in inside))
+            rights.append(max(r.bbox.x1 for r in inside))
+
+        if len(lefts) < MIN_ALIGNMENT_SAMPLES:
+            continue
+        # Either edge lining up is enough: columns of numbers are right-aligned.
+        spreads.append(min(statistics.pstdev(lefts), statistics.pstdev(rights)))
+
+    if not spreads:
+        return True
+    # Every column must line up, not merely the average of them: in justified
+    # prose the first "column" is the left margin and aligns perfectly, which
+    # would drag a mean down far enough to accept the whole spurious grid.
+    return max(spreads) <= MAX_COLUMN_EDGE_SPREAD
 
 
 def _corridor_to_separator(
@@ -325,17 +379,29 @@ def _corridor_to_separator(
     return [(x_start + x_end) / 2.0]
 
 
-def build_column_boundaries(page: PageContent, lines: list[TextLine], content: BBox) -> list[float]:
+def whitespace_corridors(lines: list[TextLine], content: BBox) -> list[float]:
+    """Confirmed vertical corridors, the only column evidence an unruled row has."""
+    return [
+        x
+        for x in _column_edges_from_whitespace(lines, content)
+        if content.x0 + MIN_BAND_SIZE < x < content.x1 - MIN_BAND_SIZE
+    ]
+
+
+def build_column_boundaries(
+    page: PageContent,
+    lines: list[TextLine],
+    content: BBox,
+    corridors: list[float] | None = None,
+) -> list[float]:
     """The sheet's global column boundaries, left edge to right edge."""
     edges = _column_edges_from_rulings(page)
     interior = [x for x in edges if content.x0 + MIN_BAND_SIZE < x < content.x1 - MIN_BAND_SIZE]
 
     if not interior:
-        interior = [
-            x
-            for x in _column_edges_from_whitespace(lines, content)
-            if content.x0 + MIN_BAND_SIZE < x < content.x1 - MIN_BAND_SIZE
-        ]
+        interior = list(
+            corridors if corridors is not None else whitespace_corridors(lines, content)
+        )
 
     boundaries = _cluster_positions([content.x0, *interior, content.x1])
     return _prune_boundaries(boundaries)
@@ -588,7 +654,8 @@ def build_sheet_grid(page: PageContent, title: str | None = None) -> SheetGrid:
         )
 
     content = _content_bbox(page, lines)
-    col_bounds = build_column_boundaries(page, lines, content)
+    corridors = whitespace_corridors(lines, content)
+    col_bounds = build_column_boundaries(page, lines, content, corridors)
     row_bounds = build_row_boundaries(page, lines, content)
 
     n_cols = max(0, len(col_bounds) - 1)
@@ -608,7 +675,7 @@ def build_sheet_grid(page: PageContent, title: str | None = None) -> SheetGrid:
         band_top = row_bounds[text_row]
         band_bottom = row_bounds[min(text_row + text_row_span, len(row_bounds) - 1)]
 
-        runs = _split_line_for_row(line, band_top, band_bottom, col_bounds, verticals)
+        runs = _split_line_for_row(line, band_top, band_bottom, corridors, verticals)
 
         for run in runs:
             if not run.text:

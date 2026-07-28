@@ -194,6 +194,37 @@ slower on CPU for a small accuracy gain, which turned the zoom-and-re-ask step �
 one recognition call per disputed cell — into minutes of work per page. The
 mobile models are the default; `OCR_MODEL_VARIANT=server` opts back in.
 
+## Found by running real documents
+
+### A32. A line is cut only where the page says a column is
+Running a 33-page research paper through the converter turned a page of
+justified prose into a ten-column table of shredded sentences. Justification
+stretches word spaces, and enough of those gaps coincided between lines to punch
+whitespace corridors straight through a paragraph.
+
+Two rules came out of it. A whitespace corridor is only accepted when the text
+edges either side of it line up across rows — cell padding is constant, so a
+real column's edges agree to within a point or two, whereas the prose measured
+three to four times that. And a line outside any ruled table is now split *only*
+at a confirmed corridor: never at the sheet's global column boundaries, which
+may belong to a table elsewhere on the page, and never at a bare gap, however
+wide.
+
+### A33. Scanned justified prose is a known weak spot
+The same page read by OCR still fragments. OCR reports a justified line in
+pieces, and those pieces' edges can align across rows well enough to look like
+columns. Fixing it properly means segmenting the page into regions before
+looking for columns, so that prose and tables are not judged by one statistic —
+a redesign rather than a tuning change. The fixture stays in the suite, marked
+as an expected failure with that reason, and its score is still printed in the
+accuracy table rather than hidden.
+
+### A34. Full-width punctuation is folded back to ASCII
+PaddleOCR's recognition head is multilingual and occasionally returns the CJK
+form of a comma or bracket on a Latin-script page. The glyph on the page was the
+ASCII one; the difference is invisible to a reader and fatal to an exact-value
+comparison.
+
 ## Cross-cutting
 
 ### A10. Accuracy counts spurious cells as errors

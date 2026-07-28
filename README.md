@@ -75,6 +75,36 @@ the OCR engine and the model. A value is overwritten only when both agree
 against the original; anything still unsettled goes to the review screen rather
 than being guessed at.
 
+## Trying it on a real document
+
+The quickest path — no database, no broker, no containers:
+
+```bash
+cd backend && python -m app.cli /path/to/your.pdf
+```
+
+It writes `your.xlsx` next to the PDF and prints what it found per page. Add
+`--inspect` to see only how each page is classified without converting.
+
+Scanned documents additionally need `pip install -r requirements-ocr.txt`; the
+models download themselves on first use.
+
+For the review workflow — the side-by-side view with click-to-fix cells — run
+the full stack with `docker compose up --build`.
+
+## Known limitations
+
+- **Scanned justified prose.** OCR reports a justified line in fragments whose
+  edges can align across rows well enough to look like columns, so a paragraph
+  may come out split. The digital path handles this correctly. Fixing the
+  scanned case needs page-region segmentation; the fixture is in the suite,
+  marked expected-to-fail with that reason, and still scored.
+- **Typography from scans.** A raster says nothing about typeface or weight, so
+  bold, italic and font colour are not recovered from scanned pages. Values,
+  positions, merges, borders and fills are.
+- **Ambiguous dates.** `01/02/2026` is left as text, since the page does not say
+  whether the day or the month comes first.
+
 ## Layout
 
 ```
