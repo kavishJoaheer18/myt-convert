@@ -42,8 +42,11 @@ LINE_OVERLAP_RATIO = 0.45
 COARSE_GAP = 4.0
 #: A whitespace corridor must be at least this wide to separate columns.
 MIN_GAP_WIDTH = 5.0
-#: ...and must stay empty across at least this fraction of candidate rows.
+#: ...and must stay empty across at least this fraction of the rows that
+#: actually reach across it.
 MIN_GAP_SUPPORT = 0.85
+#: Rows that must span a corridor before its emptiness means anything.
+MIN_CORRIDOR_WITNESSES = 3
 #: Columns and rows thinner than this are artefacts of double-drawn borders.
 MIN_BAND_SIZE = 3.0
 #: A run must cover this much of a column (relative to the smaller of the two)
@@ -57,6 +60,11 @@ MIN_RULING_PAGE_FRACTION = 0.04
 MAX_COLUMN_EDGE_SPREAD = 4.0
 #: Rows needed before a column's alignment is worth judging.
 MIN_ALIGNMENT_SAMPLES = 3
+#: A gap must clear this (pt) before it can separate cells on its own.
+MIN_OUTLIER_GAP_PT = 18.0
+#: ...and be this many times the line's typical spacing. Justification stretches
+#: every gap on a line together, so none of them stands out by this margin.
+OUTLIER_GAP_FACTOR = 3.0
 
 
 @dataclass
@@ -201,31 +209,35 @@ def _split_line_for_row(
     columns survives as one value instead of being torn along the column grid it
     deliberately ignores.
 
-    Rows outside any ruled table are split only at whitespace corridors that were
-    confirmed to run down the page — never at the sheet's global column
-    boundaries, and never at a bare gap.  Those boundaries may come from a table
+    Rows outside any ruled table are split at confirmed whitespace corridors, and
+    otherwise only where a gap is a clear outlier *for its own line*.  The
+    sheet's global column boundaries are never used: they may come from a table
     elsewhere on the page, and applying them to a paragraph shreds its sentences
-    into columns that have nothing to do with it.  A wide gap alone is no better
-    evidence: justification stretches word spaces, and OCR reports a line in
-    fragments with gaps of its own making.
+    into columns that have nothing to do with it.
 
-    The rule is therefore that a line is only cut where something on the page
-    positively says a column boundary is there.
+    Judging a gap against its own line is what separates the two cases that a
+    fixed threshold cannot.  Justification stretches every space on a line by
+    about the same amount, so no gap stands out; a heading with a date pushed to
+    the right margin has one gap many times the others.
     """
     if not line.words:
         return []
 
     crossing = _crossing_verticals(band_top, band_bottom, verticals)
     separators = crossing if len(crossing) >= 2 else corridors
+    outliers = set() if separators else _outlier_gap_positions(line)
 
     runs: list[TextRun] = []
     current: list[Word] = []
     previous: Word | None = None
 
-    for word in line.words:
+    for index, word in enumerate(line.words):
         if previous is not None:
             gap_start, gap_end = previous.bbox.x1, word.bbox.x0
-            if any(gap_start < s < gap_end for s in separators):
+            split = any(gap_start < s < gap_end for s in separators)
+            if index in outliers:
+                split = True
+            if split:
                 runs.append(TextRun(words=current))
                 current = []
         current.append(word)
@@ -234,6 +246,28 @@ def _split_line_for_row(
     if current:
         runs.append(TextRun(words=current))
     return runs
+
+
+def _outlier_gap_positions(line: TextLine) -> set[int]:
+    """Indices of words preceded by a gap that stands out on this line.
+
+    Used only when the page offers no corridor to split on.  A gap must be both
+    absolutely wide and far larger than the line's typical spacing, so stretched
+    justification — where every gap grows together — never qualifies.
+    """
+    gaps = [
+        line.words[i].bbox.x0 - line.words[i - 1].bbox.x1
+        for i in range(1, len(line.words))
+    ]
+    if not gaps:
+        return set()
+
+    if len(gaps) == 1:
+        return {1} if gaps[0] > MIN_OUTLIER_GAP_PT else set()
+
+    typical = statistics.median(gaps)
+    threshold = max(MIN_OUTLIER_GAP_PT, OUTLIER_GAP_FACTOR * typical)
+    return {i + 1 for i, gap in enumerate(gaps) if gap > threshold}
 
 
 def _coarse_gap_for_line(line: TextLine) -> float:
@@ -291,6 +325,12 @@ def _column_edges_from_whitespace(
     step = 0.5
     n_bins = max(1, int(content.width / step) + 1)
     free_counts = [0] * n_bins
+    #: Rows with text on both sides of a bin — the only ones whose opinion of it
+    #: means anything. A line that stops short of a gutter is not evidence that
+    #: the gutter exists, and counting it as such lets a page of short lines
+    #: manufacture columns; counting it against lets one full-width heading veto
+    #: a gutter that every other row observes.
+    straddle_counts = [0] * n_bins
 
     for runs in candidates:
         occupied = [False] * n_bins
@@ -300,16 +340,26 @@ def _column_edges_from_whitespace(
             end = min(n_bins - 1, int((box.x1 - content.x0) / step))
             for b in range(start, end + 1):
                 occupied[b] = True
-        for b in range(n_bins):
-            if not occupied[b]:
-                free_counts[b] += 1
 
-    required = len(candidates) * MIN_GAP_SUPPORT
+        row_start = min(int((r.bbox.x0 - content.x0) / step) for r in runs)
+        row_end = max(int((r.bbox.x1 - content.x0) / step) for r in runs)
+
+        for b in range(n_bins):
+            straddles = row_start < b < row_end
+            if straddles:
+                straddle_counts[b] += 1
+                if not occupied[b]:
+                    free_counts[b] += 1
+
     separators: list[float] = []
     run_start: int | None = None
 
     for b in range(n_bins):
-        is_free = free_counts[b] >= required
+        witnesses = straddle_counts[b]
+        is_free = (
+            witnesses >= MIN_CORRIDOR_WITNESSES
+            and free_counts[b] >= witnesses * MIN_GAP_SUPPORT
+        )
         if is_free and run_start is None:
             run_start = b
         elif not is_free and run_start is not None:
@@ -388,6 +438,40 @@ def whitespace_corridors(lines: list[TextLine], content: BBox) -> list[float]:
     ]
 
 
+def _boundaries_from_outlier_gaps(
+    lines: list[TextLine], content: BBox, min_support: int = 2
+) -> list[float]:
+    """Column boundaries from gaps that stand out on their own line.
+
+    Only gaps that several lines agree on are kept, so one line with an unusual
+    break cannot invent a column for the whole sheet.
+    """
+    midpoints: list[float] = []
+    for line in lines:
+        for index in _outlier_gap_positions(line):
+            left = line.words[index - 1].bbox.x1
+            right = line.words[index].bbox.x0
+            midpoints.append((left + right) / 2.0)
+
+    if not midpoints:
+        return []
+
+    # Cluster loosely: the same gutter lands a few points apart line to line.
+    clusters: list[list[float]] = []
+    for value in sorted(midpoints):
+        if clusters and value - clusters[-1][-1] <= MIN_GAP_WIDTH * 2:
+            clusters[-1].append(value)
+        else:
+            clusters.append([value])
+
+    return [
+        statistics.fmean(cluster)
+        for cluster in clusters
+        if len(cluster) >= min_support
+        and content.x0 + MIN_BAND_SIZE < statistics.fmean(cluster) < content.x1 - MIN_BAND_SIZE
+    ]
+
+
 def build_column_boundaries(
     page: PageContent,
     lines: list[TextLine],
@@ -403,6 +487,14 @@ def build_column_boundaries(
             corridors if corridors is not None else whitespace_corridors(lines, content)
         )
 
+    if not interior:
+        # Nothing drew a column and no corridor runs the height of the page, but
+        # individual lines may still break cleanly — a two-column CV, where each
+        # side is a different length so no single strip stays clear. Without a
+        # boundary here the two halves of every line land in one cell and are
+        # concatenated into nonsense.
+        interior = _boundaries_from_outlier_gaps(lines, content)
+
     boundaries = _cluster_positions([content.x0, *interior, content.x1])
     return _prune_boundaries(boundaries)
 
@@ -415,17 +507,24 @@ def _band_is_real(
 ) -> bool:
     """Does a gap between two horizontal rulings represent an actual table row?
 
-    Two stacked tables produce a spurious band between them — bounded above by
-    the first table's last line and below by the second's first.  A genuine row
-    either holds text or is crossed by the table's vertical borders; the dead
-    space between tables is neither.
+    Vertical borders crossing the band settle it: that is a table cell.  Failing
+    that, the band has to look like a row — at most one line of text in it.
+
+    The multi-line case is what rules out decoration.  Section underlines in a
+    CV or a report are horizontal rulings too, and the space between two of them
+    is a whole section, not a row; treating it as one collapses every line it
+    contains into a single cell.  Two stacked tables produce the same trap in
+    reverse, with an empty band between them that no border crosses.
     """
-    if any(top <= line.bbox.cy < bottom for line in lines):
-        return True
-    return any(
+    crossed = any(
         ruling.span[0] <= top + BOUNDARY_TOL and ruling.span[1] >= bottom - BOUNDARY_TOL
         for ruling in verticals
     )
+    if crossed:
+        return True
+
+    contained = sum(1 for line in lines if top <= line.bbox.cy < bottom)
+    return contained == 1
 
 
 def build_row_boundaries(page: PageContent, lines: list[TextLine], content: BBox) -> list[float]:
@@ -472,12 +571,16 @@ def build_row_boundaries(page: PageContent, lines: list[TextLine], content: BBox
         if not covered(line.bbox.cy):
             bands.append(_Band(top=line.bbox.top, bottom=line.bbox.bottom))
 
-    # An image occupies vertical space just as text does; without a row of its
-    # own it would be anchored into whichever neighbouring row it happened to
-    # touch and the page would lose a band of its layout.
+    # An image that has vertical space to itself gets a row, so the layout keeps
+    # the band it occupied. One sitting *beside* text must not: its band would
+    # span every line next to it and merge them all into a single row, which is
+    # how a CV with a portrait photo collapses into a handful of rows.
     for image in page.images:
         box = image.bbox
-        if not covered(box.cy):
+        beside_text = any(
+            line.bbox.top < box.bottom and line.bbox.bottom > box.top for line in lines
+        )
+        if not beside_text and not covered(box.cy):
             bands.append(_Band(top=box.top, bottom=box.bottom))
 
     if not bands:

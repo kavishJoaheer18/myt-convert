@@ -17,6 +17,23 @@ logger = logging.getLogger(__name__)
 
 #: Images smaller than this on the page are separators or spacer GIFs.
 _MIN_DISPLAY_PT = 2.0
+#: An image covering this much of the page is its background, not its content.
+BACKGROUND_COVERAGE = 0.85
+
+
+def is_page_background(image: ImageBlock, page_width: float, page_height: float) -> bool:
+    """Is this image the page's backdrop rather than something on the page?
+
+    Designed documents — CVs, brochures, letterheads — are usually built on a
+    full-bleed background image. Anchoring one into a worksheet drops an opaque
+    slab over every cell, and because it spans the whole page it also swallows
+    every row band into a single row. A spreadsheet wants the data, so the
+    backdrop is dropped and only the pictures sitting on it are kept.
+    """
+    page_area = page_width * page_height
+    if page_area <= 0:
+        return False
+    return image.bbox.area / page_area >= BACKGROUND_COVERAGE
 
 
 def points_to_display_pixels(points: float) -> int:

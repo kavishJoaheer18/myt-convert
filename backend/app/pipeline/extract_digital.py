@@ -18,6 +18,7 @@ from app.models.content import ImageBlock, PageContent, PageKind, RectDrawing, R
 from app.models.geometry import BBox
 from app.pipeline.colors import normalize_color
 from app.pipeline.fonts import parse_font
+from app.pipeline.images import is_page_background
 
 logger = logging.getLogger(__name__)
 
@@ -291,7 +292,20 @@ def extract_page(
     words = _extract_words(plumber_page)
     raw_rulings, rects = _extract_drawings(fitz_page)
     rulings = merge_collinear_rulings(raw_rulings)
-    images = _extract_images(doc, fitz_page, image_dir, page_number)
+
+    page_width = float(fitz_page.rect.width)
+    page_height = float(fitz_page.rect.height)
+    all_images = _extract_images(doc, fitz_page, image_dir, page_number)
+    images = [
+        image
+        for image in all_images
+        if not is_page_background(image, page_width, page_height)
+    ]
+    if len(images) != len(all_images):
+        logger.info(
+            "dropped page background",
+            extra={"page": page_number, "count": len(all_images) - len(images)},
+        )
 
     logger.info(
         "extracted digital page",
@@ -306,8 +320,8 @@ def extract_page(
 
     return PageContent(
         page_number=page_number,
-        width=float(fitz_page.rect.width),
-        height=float(fitz_page.rect.height),
+        width=page_width,
+        height=page_height,
         kind=kind,
         rotation=int(fitz_page.rotation),
         words=words,
