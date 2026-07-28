@@ -8,7 +8,8 @@ recovered.  The strategy, in order of trustworthiness:
    horizontal segments *are* the grid.  Nothing inferred beats a line that is
    actually there.
 2. **Whitespace columns.**  For borderless tables, a vertical strip that stays
-   empty across most text lines is a column separator.
+   empty is a column separator — judged only by the rows that actually reach
+   across it, since a line stopping short of a gutter says nothing about it.
 3. **Text lines.**  Rows fall back to the visual lines of text, which is how a
    person transcribing the page would read it.
 
@@ -54,12 +55,6 @@ MIN_BAND_SIZE = 3.0
 CELL_OVERLAP_RATIO = 0.30
 #: A ruling must be at least this fraction of the page to define table geometry.
 MIN_RULING_PAGE_FRACTION = 0.04
-#: How far a column's text edges may scatter (pt) before it stops looking like a
-#: column. Cell padding is constant, so a real column's edges align to well under
-#: a couple of points; justified prose measured three to four times this.
-MAX_COLUMN_EDGE_SPREAD = 4.0
-#: Rows needed before a column's alignment is worth judging.
-MIN_ALIGNMENT_SAMPLES = 3
 #: A gap must clear this (pt) before it can separate cells on its own.
 MIN_OUTLIER_GAP_PT = 18.0
 #: ...and be this many times the line's typical spacing. Justification stretches
@@ -293,6 +288,26 @@ def _column_index_for(x: float, boundaries: list[float]) -> int:
 # --- Column discovery -------------------------------------------------------
 
 
+def _grid_verticals(page: PageContent, content: BBox) -> list[Ruling]:
+    """Vertical rulings that form a column grid, or nothing at all.
+
+    A page border is two verticals at the content edges.  It crosses every line
+    on the page, so if it is mistaken for a table's borders then every line
+    "spans" the full width and lands in one cell — which is how a quotation's
+    entire address block collapses into A1.
+
+    A grid needs at least one vertical *inside* the content.  When one exists the
+    outer borders are kept too, because they are then genuinely the first and
+    last edges of the table.
+    """
+    verticals = _significant_rulings(page.rulings, "v", page.height)
+    has_interior = any(
+        content.x0 + MIN_BAND_SIZE < ruling.position < content.x1 - MIN_BAND_SIZE
+        for ruling in verticals
+    )
+    return verticals if has_interior else []
+
+
 def _significant_rulings(rulings: list[Ruling], orientation: str, page_extent: float) -> list[Ruling]:
     minimum = page_extent * MIN_RULING_PAGE_FRACTION
     return [r for r in rulings if r.orientation == orientation and r.length >= minimum]
@@ -368,51 +383,7 @@ def _column_edges_from_whitespace(
     if run_start is not None:
         separators.extend(_corridor_to_separator(run_start, n_bins - 1, step, content))
 
-    if separators and not _columns_are_aligned(candidates, separators, content):
-        return []
     return separators
-
-
-def _columns_are_aligned(
-    candidates: list[list[TextRun]], separators: list[float], content: BBox
-) -> bool:
-    """Do the proposed columns look like a table, or like justified prose?
-
-    In a table the values of a column start (or, for numbers, end) at very nearly
-    the same x on every row. In justified text the inter-word gaps drift from
-    line to line, and enough of them can coincide to punch a corridor clean
-    through a paragraph — which is how a page of prose ends up split into ten
-    "columns".
-
-    Requiring the edges to line up separates the two cases without needing to
-    know anything about the words themselves.
-    """
-    bounds = [content.x0, *separators, content.x1]
-    spreads: list[float] = []
-
-    for index in range(len(bounds) - 1):
-        low, high = bounds[index], bounds[index + 1]
-        lefts: list[float] = []
-        rights: list[float] = []
-
-        for runs in candidates:
-            inside = [r for r in runs if low <= r.bbox.cx < high]
-            if not inside:
-                continue
-            lefts.append(min(r.bbox.x0 for r in inside))
-            rights.append(max(r.bbox.x1 for r in inside))
-
-        if len(lefts) < MIN_ALIGNMENT_SAMPLES:
-            continue
-        # Either edge lining up is enough: columns of numbers are right-aligned.
-        spreads.append(min(statistics.pstdev(lefts), statistics.pstdev(rights)))
-
-    if not spreads:
-        return True
-    # Every column must line up, not merely the average of them: in justified
-    # prose the first "column" is the left margin and aligns perfectly, which
-    # would drag a mean down far enough to accept the whole spurious grid.
-    return max(spreads) <= MAX_COLUMN_EDGE_SPREAD
 
 
 def _corridor_to_separator(
@@ -541,7 +512,7 @@ def build_row_boundaries(page: PageContent, lines: list[TextLine], content: BBox
     gap is zero) the midpoint is exactly the shared border.
     """
     horizontals = _significant_rulings(page.rulings, "h", page.width)
-    verticals = _significant_rulings(page.rulings, "v", page.height)
+    verticals = _grid_verticals(page, content)
 
     # A shaded rectangle's edges bound a row just as a drawn rule does, and on a
     # scan they may be the only evidence left: a dark fill hides the very line
@@ -764,7 +735,7 @@ def build_sheet_grid(page: PageContent, title: str | None = None) -> SheetGrid:
     n_cols = max(0, len(col_bounds) - 1)
     n_rows = max(0, len(row_bounds) - 1)
 
-    verticals = _significant_rulings(page.rulings, "v", page.height)
+    verticals = _grid_verticals(page, content)
     horizontals = _significant_rulings(page.rulings, "h", page.width)
 
     cells: list[GridCell] = []

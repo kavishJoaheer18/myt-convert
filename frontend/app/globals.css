@@ -3,9 +3,34 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
+  --surface: #ffffff;
+  --canvas: #f5f7fb;
 }
 
 body {
-  @apply bg-neutral-950 text-neutral-100 antialiased;
+  @apply bg-[--canvas] text-telecom antialiased;
+  font-feature-settings: "kern", "liga";
+}
+
+@layer components {
+  /* A panel: white surface, light-grey hairline, rounded like the wordmark. */
+  .panel {
+    @apply rounded-brand border border-light-grey bg-white;
+  }
+
+  .btn-primary {
+    @apply rounded-brand bg-digital px-5 py-2.5 text-sm font-medium text-white
+           transition hover:bg-myt disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .btn-ghost {
+    @apply rounded-brand border border-light-grey bg-white px-5 py-2.5 text-sm
+           font-medium text-telecom transition hover:border-digital hover:text-digital
+           disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .field-label {
+    @apply text-xs font-medium uppercase tracking-wider text-telecom/50;
+  }
 }

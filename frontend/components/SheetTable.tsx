@@ -48,15 +48,15 @@ export function SheetTable({
   }
 
   return (
-    <div className="overflow-auto rounded border border-neutral-800">
+    <div className="panel max-h-[70vh] overflow-auto">
       <table className="w-full border-collapse text-xs">
-        <thead>
+        <thead className="sticky top-0 z-20">
           <tr>
-            <th className="sticky left-0 z-10 bg-neutral-900 p-1" />
+            <th className="sticky left-0 z-30 bg-[--canvas] p-1" />
             {Array.from({ length: sheet.n_cols }, (_, col) => (
               <th
                 key={col}
-                className="bg-neutral-900 px-2 py-1 font-mono font-normal text-neutral-500"
+                className="border-b border-light-grey bg-[--canvas] px-2 py-1.5 font-mono text-[11px] font-normal text-telecom/45"
               >
                 {columnLabel(col)}
               </th>
@@ -66,7 +66,7 @@ export function SheetTable({
         <tbody>
           {Array.from({ length: sheet.n_rows }, (_, row) => (
             <tr key={row}>
-              <th className="sticky left-0 z-10 bg-neutral-900 px-2 py-1 font-mono font-normal text-neutral-500">
+              <th className="sticky left-0 z-10 border-r border-light-grey bg-[--canvas] px-2 py-1 font-mono text-[11px] font-normal text-telecom/45">
                 {row + 1}
               </th>
               {Array.from({ length: sheet.n_cols }, (_, col) => {
@@ -87,14 +87,14 @@ export function SheetTable({
                     rowSpan={cell?.row_span ?? 1}
                     onClick={() => cell && setEditing(key)}
                     className={[
-                      "cursor-text border border-neutral-800 px-2 py-1 align-middle",
-                      isDisputed ? "bg-amber-950/60 ring-1 ring-amber-600" : "",
-                      !isDisputed && isLowConfidence ? "bg-sky-950/40" : "",
-                      isEdited ? "bg-emerald-950/60 ring-1 ring-emerald-600" : "",
+                      "max-w-[22rem] cursor-text truncate border border-light-grey/70 px-2 py-1 align-middle text-telecom",
+                      isDisputed ? "bg-care/10 ring-1 ring-inset ring-care/50" : "",
+                      !isDisputed && isLowConfidence ? "bg-aqua/10" : "",
+                      isEdited ? "bg-money/15 ring-1 ring-inset ring-money/60" : "",
                     ].join(" ")}
                     title={
                       cell
-                        ? `${cell.source} · confidence ${(cell.confidence * 100).toFixed(0)}%`
+                        ? `${cell.source} · ${(cell.confidence * 100).toFixed(0)}% confidence`
                         : undefined
                     }
                   >
@@ -110,10 +110,10 @@ export function SheetTable({
                           if (event.key === "Enter") event.currentTarget.blur();
                           if (event.key === "Escape") setEditing(null);
                         }}
-                        className="w-full bg-neutral-800 px-1 text-neutral-100 outline-none"
+                        className="w-full rounded bg-white px-1 text-telecom outline-none ring-2 ring-digital"
                       />
                     ) : (
-                      <span className="whitespace-nowrap">{value}</span>
+                      value
                     )}
                   </td>
                 );

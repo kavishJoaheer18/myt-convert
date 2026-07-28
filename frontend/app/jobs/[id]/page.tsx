@@ -7,6 +7,17 @@ import { StatusBadge } from "@/components/StatusBadge";
 
 const POLL_MS = 2000;
 
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="panel px-5 py-4">
+      <dt className="field-label">{label}</dt>
+      <dd className="mt-1.5 text-xl font-medium tabular-nums text-telecom">
+        {value}
+      </dd>
+    </div>
+  );
+}
+
 export default function JobPage({ params }: { params: { id: string } }) {
   const [job, setJob] = useState<JobDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -21,13 +32,12 @@ export default function JobPage({ params }: { params: { id: string } }) {
         if (!active) return;
         setJob(next);
         setError(null);
-        // Stop polling once the job reaches a terminal state.
         if (next.status !== "DONE" && next.status !== "FAILED") {
           timer = setTimeout(refresh, POLL_MS);
         }
       } catch (cause) {
         if (!active) return;
-        setError(cause instanceof Error ? cause.message : "cannot reach API");
+        setError(cause instanceof Error ? cause.message : "cannot reach the API");
         timer = setTimeout(refresh, POLL_MS);
       }
     }
@@ -39,78 +49,101 @@ export default function JobPage({ params }: { params: { id: string } }) {
     };
   }, [params.id]);
 
-  if (error) return <p className="text-sm text-red-400">{error}</p>;
-  if (!job) return <p className="text-sm text-neutral-500">Loading…</p>;
+  if (error && !job) return <p className="text-sm text-care">{error}</p>;
+  if (!job) return <p className="text-sm font-light text-telecom/50">Loading…</p>;
+
+  const openDisputes = job.discrepancies.filter((d) => d.status === "OPEN");
 
   return (
     <main>
-      <Link href="/" className="text-sm text-neutral-500 hover:text-neutral-300">
-        &larr; All jobs
+      <Link
+        href="/"
+        className="text-sm font-light text-telecom/50 hover:text-digital"
+      >
+        &larr; All conversions
       </Link>
 
-      <div className="mt-4 flex items-center gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">{job.filename}</h1>
+      <div className="mt-5 flex flex-wrap items-center gap-4">
+        <h1 className="text-2xl font-bold tracking-tight text-telecom">
+          {job.filename}
+        </h1>
         <StatusBadge status={job.status} />
       </div>
 
       {job.error && (
-        <pre className="mt-6 overflow-x-auto rounded border border-red-900 bg-red-950/40 p-4 text-sm text-red-300">
+        <pre className="mt-6 overflow-x-auto rounded-brand bg-care/10 p-5 text-sm text-care">
           {job.error}
         </pre>
       )}
 
-      <dl className="mt-8 grid grid-cols-2 gap-6 text-sm sm:grid-cols-4">
-        <div>
-          <dt className="text-neutral-500">Pages</dt>
-          <dd className="mt-1 tabular-nums">{job.page_count}</dd>
-        </div>
-        <div>
-          <dt className="text-neutral-500">Cells</dt>
-          <dd className="mt-1 tabular-nums">{job.cell_count}</dd>
-        </div>
-        <div>
-          <dt className="text-neutral-500">Duration</dt>
-          <dd className="mt-1 tabular-nums">
-            {(job.duration_ms / 1000).toFixed(2)}s
-          </dd>
-        </div>
-        <div>
-          <dt className="text-neutral-500">Job</dt>
-          <dd className="mt-1 font-mono text-xs text-neutral-400">{job.id}</dd>
-        </div>
+      <dl className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <Stat label="Pages" value={String(job.page_count)} />
+        <Stat label="Cells" value={String(job.cell_count)} />
+        <Stat label="Time" value={`${(job.duration_ms / 1000).toFixed(1)}s`} />
+        <Stat label="To review" value={String(openDisputes.length)} />
       </dl>
 
       {job.pages.length > 0 && (
-        <table className="mt-10 w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-neutral-800 text-left text-neutral-500">
-              <th className="py-2 font-medium">Page</th>
-              <th className="py-2 font-medium">Source</th>
-              <th className="py-2 text-right font-medium">Rows</th>
-              <th className="py-2 text-right font-medium">Columns</th>
-            </tr>
-          </thead>
-          <tbody>
-            {job.pages.map((page) => (
-              <tr key={page.page_number} className="border-b border-neutral-900">
-                <td className="py-2">{page.page_number}</td>
-                <td className="py-2 text-neutral-400">{page.kind}</td>
-                <td className="py-2 text-right tabular-nums">{page.n_rows}</td>
-                <td className="py-2 text-right tabular-nums">{page.n_cols}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <section className="mt-10">
+          <h2 className="field-label">Pages</h2>
+          <div className="panel mt-3 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-light-grey text-left">
+                  <th className="px-5 py-3 font-medium text-telecom/60">Page</th>
+                  <th className="px-5 py-3 font-medium text-telecom/60">Read as</th>
+                  <th className="px-5 py-3 text-right font-medium text-telecom/60">
+                    Rows
+                  </th>
+                  <th className="px-5 py-3 text-right font-medium text-telecom/60">
+                    Columns
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {job.pages.map((page) => (
+                  <tr
+                    key={page.page_number}
+                    className="border-b border-light-grey/60 last:border-0"
+                  >
+                    <td className="px-5 py-3 text-telecom">{page.page_number}</td>
+                    <td className="px-5 py-3 font-light text-telecom/70">
+                      {page.kind}
+                    </td>
+                    <td className="px-5 py-3 text-right tabular-nums text-telecom/70">
+                      {page.n_rows}
+                    </td>
+                    <td className="px-5 py-3 text-right tabular-nums text-telecom/70">
+                      {page.n_cols}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
 
-      {job.has_output && (
-        <a
-          href={downloadUrl(job.id)}
-          className="mt-10 inline-block rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
-        >
-          Download .xlsx
-        </a>
-      )}
+      <div className="mt-10 flex flex-wrap items-center gap-3">
+        {job.has_output && (
+          <a href={downloadUrl(job.id)} className="btn-primary">
+            Download spreadsheet
+          </a>
+        )}
+        {job.pages.length > 0 && (
+          <Link href={`/jobs/${job.id}/review`} className="btn-ghost">
+            Open review
+          </Link>
+        )}
+        {job.has_verified_output && (
+          <a
+            href={downloadUrl(job.id, true)}
+            className="text-sm font-medium text-digital hover:underline"
+          >
+            Download corrected version
+          </a>
+        )}
+      </div>
     </main>
   );
 }

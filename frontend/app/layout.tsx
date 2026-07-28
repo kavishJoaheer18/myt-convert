@@ -1,9 +1,19 @@
 import type { Metadata } from "next";
+import { Poppins } from "next/font/google";
 import Link from "next/link";
+import { Wordmark } from "@/components/Wordmark";
 import "./globals.css";
 
+// Primary weights per the guidelines: Light, Medium, Bold.
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  variable: "--font-poppins",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
-  title: "GridLock",
+  title: "myt gridlock",
   description: "Layout-faithful PDF to Excel conversion",
 };
 
@@ -13,19 +23,26 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={poppins.variable}>
       <body>
-        <div className="mx-auto max-w-5xl px-6 py-10">
-          <header className="mb-10 flex items-baseline justify-between border-b border-neutral-800 pb-4">
-            <Link href="/" className="text-xl font-semibold tracking-tight">
-              Grid<span className="text-emerald-400">Lock</span>
+        <header className="border-b border-light-grey bg-white">
+          <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
+            <Link href="/" aria-label="myt gridlock home">
+              <Wordmark />
             </Link>
-            <p className="text-sm text-neutral-500">
-              PDF &rarr; Excel, layout intact
+            <p className="hidden text-sm font-light text-telecom/55 sm:block">
+              PDF to Excel, layout intact
             </p>
-          </header>
-          {children}
-        </div>
+          </div>
+        </header>
+
+        <div className="mx-auto max-w-6xl px-6 py-10">{children}</div>
+
+        <footer className="mx-auto max-w-6xl px-6 pb-10 pt-4">
+          <p className="text-xs font-light text-telecom/40">
+            A Mauritius Telecom service.
+          </p>
+        </footer>
       </body>
     </html>
   );

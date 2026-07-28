@@ -1,19 +1,31 @@
 import type { JobStatus } from "@/lib/api";
 
+/**
+ * Status colours come from the secondary palette, which the guidelines set
+ * aside for differentiating states and services.
+ */
 const STYLES: Record<JobStatus, string> = {
-  QUEUED: "bg-neutral-800 text-neutral-300",
-  PROCESSING: "bg-sky-950 text-sky-300",
-  NEEDS_REVIEW: "bg-amber-950 text-amber-300",
-  DONE: "bg-emerald-950 text-emerald-300",
-  FAILED: "bg-red-950 text-red-300",
+  QUEUED: "bg-light-grey/50 text-telecom/70",
+  PROCESSING: "bg-digital/10 text-digital",
+  NEEDS_REVIEW: "bg-care/10 text-care",
+  DONE: "bg-money/15 text-money",
+  FAILED: "bg-care/15 text-care",
+};
+
+const LABELS: Record<JobStatus, string> = {
+  QUEUED: "queued",
+  PROCESSING: "converting",
+  NEEDS_REVIEW: "needs review",
+  DONE: "done",
+  FAILED: "failed",
 };
 
 export function StatusBadge({ status }: { status: JobStatus }) {
   return (
     <span
-      className={`rounded px-2 py-0.5 text-xs font-medium ${STYLES[status]}`}
+      className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${STYLES[status]}`}
     >
-      {status.replace("_", " ").toLowerCase()}
+      {LABELS[status]}
     </span>
   );
 }

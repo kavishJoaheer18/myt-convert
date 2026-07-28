@@ -87,20 +87,20 @@ export default function ReviewPage({ params }: { params: { id: string } }) {
       );
       const response = await submitReview(params.id, corrections, acceptRemaining);
       setSaved(
-        `Applied ${response.applied} correction${response.applied === 1 ? "" : "s"}; ` +
+        `Saved ${response.applied} correction${response.applied === 1 ? "" : "s"}. ` +
           `${response.remaining_discrepancies} left to review.`,
       );
       setEdits({});
       setJob(await getJob(params.id));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "could not save review");
+      setError(cause instanceof Error ? cause.message : "could not save");
     } finally {
       setBusy(false);
     }
   }
 
-  if (error && !job) return <p className="text-sm text-red-400">{error}</p>;
-  if (!job) return <p className="text-sm text-neutral-500">Loading…</p>;
+  if (error && !job) return <p className="text-sm text-care">{error}</p>;
+  if (!job) return <p className="text-sm font-light text-telecom/50">Loading…</p>;
 
   const editCount = Object.keys(edits).length;
 
@@ -108,32 +108,32 @@ export default function ReviewPage({ params }: { params: { id: string } }) {
     <main>
       <Link
         href={`/jobs/${params.id}`}
-        className="text-sm text-neutral-500 hover:text-neutral-300"
+        className="text-sm font-light text-telecom/50 hover:text-digital"
       >
-        &larr; Back to job
+        &larr; Back to conversion
       </Link>
 
-      <h1 className="mt-4 text-2xl font-semibold tracking-tight">
+      <h1 className="mt-5 text-2xl font-bold tracking-tight text-telecom">
         Review {job.filename}
       </h1>
-      <p className="mt-1 text-sm text-neutral-500">
-        Click any cell to correct it. Amber cells are the ones the second reading
-        disagreed about; blue cells were read with lower confidence.
+      <p className="mt-2 max-w-2xl text-sm font-light text-telecom/60">
+        Click any cell to correct it. Pink cells are the ones the second reading
+        disagreed about; aqua cells were read with lower confidence.
       </p>
 
       {job.pages.length > 1 && (
-        <div className="mt-6 flex gap-2">
+        <div className="mt-6 flex flex-wrap gap-2">
           {job.pages.map((p) => (
             <button
               key={p.page_number}
               onClick={() => setPage(p.page_number)}
-              className={`rounded px-3 py-1 text-sm ${
+              className={`rounded-brand px-4 py-1.5 text-sm font-medium transition ${
                 p.page_number === page
-                  ? "bg-emerald-600 text-white"
-                  : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
+                  ? "bg-digital text-white"
+                  : "border border-light-grey bg-white text-telecom/70 hover:border-digital hover:text-digital"
               }`}
             >
-              Page {p.page_number}
+              {p.page_number}
             </button>
           ))}
         </div>
@@ -141,19 +141,17 @@ export default function ReviewPage({ params }: { params: { id: string } }) {
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <section>
-          <h2 className="mb-2 text-sm font-medium text-neutral-400">Source page</h2>
+          <h2 className="field-label mb-2">Source page</h2>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={pageImageUrl(params.id, page)}
             alt={`Page ${page} of ${job.filename}`}
-            className="w-full rounded border border-neutral-800 bg-white"
+            className="panel w-full bg-white"
           />
         </section>
 
         <section>
-          <h2 className="mb-2 text-sm font-medium text-neutral-400">
-            Generated sheet
-          </h2>
+          <h2 className="field-label mb-2">Generated sheet</h2>
           {sheet ? (
             <SheetTable
               sheet={sheet}
@@ -162,40 +160,35 @@ export default function ReviewPage({ params }: { params: { id: string } }) {
               onEdit={onEdit}
             />
           ) : (
-            <p className="text-sm text-neutral-500">Loading sheet…</p>
+            <p className="text-sm font-light text-telecom/50">Loading sheet…</p>
           )}
         </section>
       </div>
 
       {openOnThisPage.length > 0 && (
         <section className="mt-10">
-          <h2 className="mb-3 text-sm font-medium text-neutral-400">
-            Disputed cells on this page
-          </h2>
-          <ul className="space-y-3">
+          <h2 className="field-label">Disputed cells</h2>
+          <ul className="mt-3 space-y-3">
             {openOnThisPage.map((d) => (
-              <li
-                key={d.id}
-                className="flex items-center gap-4 rounded border border-neutral-800 p-3 text-sm"
-              >
+              <li key={d.id} className="panel flex flex-wrap items-center gap-4 p-4 text-sm">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={cropUrl(params.id, d.id)}
                   alt={`Crop of row ${d.row + 1}, column ${d.col + 1}`}
-                  className="h-10 rounded bg-white"
+                  className="h-10 rounded border border-light-grey bg-white"
                 />
-                <span className="font-mono text-neutral-500">
+                <span className="font-mono text-xs text-telecom/45">
                   r{d.row + 1}c{d.col + 1}
                 </span>
-                <span>
+                <span className="font-light text-telecom/70">
                   extracted{" "}
-                  <span className="font-mono text-amber-300">
+                  <span className="font-medium text-care">
                     {d.deterministic_value || "(empty)"}
                   </span>
                 </span>
-                <span>
+                <span className="font-light text-telecom/70">
                   second reading{" "}
-                  <span className="font-mono text-sky-300">{d.vlm_value}</span>
+                  <span className="font-medium text-digital">{d.vlm_value}</span>
                 </span>
               </li>
             ))}
@@ -203,33 +196,33 @@ export default function ReviewPage({ params }: { params: { id: string } }) {
         </section>
       )}
 
-      <div className="mt-10 flex items-center gap-4">
+      <div className="mt-10 flex flex-wrap items-center gap-3">
         <button
           disabled={busy || editCount === 0}
           onClick={() => void save(false)}
-          className="rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-40"
+          className="btn-primary"
         >
           Save {editCount} correction{editCount === 1 ? "" : "s"}
         </button>
         <button
           disabled={busy}
           onClick={() => void save(true)}
-          className="rounded border border-neutral-700 px-4 py-2 text-sm text-neutral-300 hover:bg-neutral-800 disabled:opacity-40"
+          className="btn-ghost"
         >
           Save and accept the rest
         </button>
         {job.has_verified_output && (
           <a
             href={downloadUrl(params.id, true)}
-            className="text-sm text-emerald-400 hover:underline"
+            className="text-sm font-medium text-digital hover:underline"
           >
-            Download verified .xlsx
+            Download corrected spreadsheet
           </a>
         )}
       </div>
 
-      {saved && <p className="mt-4 text-sm text-emerald-400">{saved}</p>}
-      {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
+      {saved && <p className="mt-4 text-sm text-money">{saved}</p>}
+      {error && <p className="mt-4 text-sm text-care">{error}</p>}
     </main>
   );
 }
