@@ -1,6 +1,12 @@
 # Phase 2 OCR stack, installed only into the worker image.
-# The CPU build of paddlepaddle is used deliberately: GPU is optional, and the
+#
+# The CPU build of paddlepaddle is used deliberately: GPU is optional and the
 # pipeline must work on a plain machine.
+#
+# paddlex is pinned explicitly. PaddleOCR 3.1 does not constrain its upper
+# bound, and paddlex 3.7 changed a constructor signature it calls, so an
+# unpinned install resolves to a combination that fails at model construction.
 opencv-python-headless==4.10.0.84
-paddlepaddle==2.6.2
-paddleocr==2.9.1
+paddlepaddle==3.0.0
+paddleocr==3.1.0
+paddlex==3.1.0

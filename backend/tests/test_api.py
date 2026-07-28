@@ -19,17 +19,23 @@ _TMP_ROOT = Path(tempfile.mkdtemp(prefix="gridlock_api_"))
 os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///{(_TMP_ROOT / 'test.db').as_posix()}"
 os.environ["DATA_DIR"] = str(_TMP_ROOT / "data")
 
-# Imported after the environment is set: the engine is built at import time.
+# Settings are cached process-wide and another test module may already have read
+# them, so the cache is dropped before anything here touches configuration.
+from app.config import get_settings  # noqa: E402
+
+get_settings.cache_clear()
+
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.main import app  # noqa: E402
-from app.models.db import JobStatus, init_db  # noqa: E402
+from app.models.db import JobStatus, init_db, reset_engine  # noqa: E402
 from app.services import run_conversion  # noqa: E402
 from tests.fixtures.catalog import get_fixture  # noqa: E402
 
 
 @pytest.fixture(scope="module")
 def client() -> Iterator[TestClient]:
+    reset_engine()
     init_db()
     with TestClient(app) as test_client:
         yield test_client
@@ -109,9 +115,9 @@ def test_unknown_job_is_404(client: TestClient) -> None:
 
 def test_download_before_completion_conflicts(client: TestClient) -> None:
     """A queued job has no workbook yet, and must say so rather than 404."""
-    from app.models.db import Job, SessionLocal
+    from app.models.db import Job, new_session
 
-    session = SessionLocal()
+    session = new_session()
     job = Job(filename="pending.pdf", status=JobStatus.QUEUED)
     session.add(job)
     session.commit()

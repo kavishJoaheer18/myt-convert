@@ -61,6 +61,51 @@ A PDF whose CropBox is offset from its MediaBox could make pdfplumber and
 PyMuPDF disagree about absolute positions. No fixture exercises this and no
 real-world case has been observed; it is left until one appears.
 
+## Phase 2 — scanned PDFs
+
+### A12. OCR feeds the same grid mapper as the digital path
+Recognised text becomes `Word` objects in page points and morphology turns the
+raster's rules into `Ruling` objects, so grid mapping, type inference and the
+Excel writer are shared verbatim between the two paths. Nothing downstream knows
+which way a page arrived. What differs is certainty: every OCR word carries the
+recogniser's confidence, and that propagates to the cell.
+
+### A13. Table structure comes from detected rules, not PP-StructureV3's HTML
+The brief named PP-StructureV3 for "text + table structure". Text recognition
+uses PaddleOCR (PP-OCRv5). For *structure*, morphological rule detection is used
+instead of PP-StructureV3's table branch, because the latter emits HTML whose
+cells must then be re-associated with page coordinates, while the writer needs
+coordinate-anchored cells. Detecting the rules directly gives that without a
+lossy round trip, and it reuses the Phase 1 grid mapper unchanged — including
+merged-cell detection, which the HTML path would have to reimplement. If a
+borderless scanned table ever fails the gate, PP-StructureV3 is the right thing
+to add as a structure provider for that case specifically.
+
+### A14. A detection is only split at a rule that crosses it vertically
+OCR sometimes merges two cells across a thin border, so a detection straddling a
+rule is cut at it. The rule must overlap the detection vertically as well:
+without that check, a table's column borders sliced up headings sitting above
+the table, turning `ACME CORPORATION` into `ACME CORP ORATION`.
+
+### A15. Ink that is neither rule nor text is a picture
+A scanned logo arrives as ink like everything else. After erasing detected rules
+and everything OCR could read, sufficiently large remaining regions are cropped
+out and anchored as images. Ignoring them would lose the picture *and* the
+vertical space it occupied, shifting every row beneath it.
+
+### A16. Skew is estimated from edges, not from filled regions
+A solid block contains an unlimited supply of near-horizontal chords, and
+feeding them to Hough buries the real lines: one 96 × 42 pt swatch swung the
+estimate to −2.3°, which tilted the page and destroyed every table rule on it.
+Hough therefore runs over Canny edges, and angles are combined with a
+length-weighted median so a page-wide rule outvotes a short fragment.
+
+### A17. Scanned pages carry no font metadata
+A raster cannot say which typeface it was set in. Font size is inferred from the
+text-line box height; the family falls back to the workbook default rather than
+being guessed, and bold/italic are not asserted. Phase 3 revisits what can be
+recovered from stroke weight.
+
 ## Cross-cutting
 
 ### A10. Accuracy counts spurious cells as errors

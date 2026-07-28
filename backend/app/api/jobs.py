@@ -25,7 +25,6 @@ from app.models.schemas import (
 from app.services import create_job, list_jobs
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
-settings = get_settings()
 
 _XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 #: Uploads above this size are rejected before anything touches the disk.
@@ -159,5 +158,5 @@ def delete_job(job_id: str, session: Session = Depends(get_session)) -> Response
     job = _load_job(session, job_id)
     session.delete(job)
     session.commit()
-    shutil.rmtree(settings.job_dir(job_id), ignore_errors=True)
+    shutil.rmtree(get_settings().job_dir(job_id), ignore_errors=True)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -135,6 +135,8 @@ class SheetGrid(BaseModel):
 
     page_number: int = Field(ge=1)
     title: str
+    #: How the source page was read: digital, scanned or hybrid.
+    kind: str = "digital"
     n_rows: int = Field(ge=0)
     n_cols: int = Field(ge=0)
     cells: list[GridCell] = Field(default_factory=list)

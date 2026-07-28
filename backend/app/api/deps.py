@@ -6,11 +6,11 @@ from typing import Iterator
 
 from sqlalchemy.orm import Session
 
-from app.models.db import SessionLocal
+from app.models.db import new_session
 
 
 def get_session() -> Iterator[Session]:
-    session = SessionLocal()
+    session = new_session()
     try:
         yield session
     finally:

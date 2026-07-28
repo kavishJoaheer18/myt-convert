@@ -15,30 +15,17 @@ from pathlib import Path
 import fitz
 import pdfplumber
 
+from app.config import get_settings
 from app.models.content import PageContent, PageKind
 from app.models.grid import DocumentGrid, SheetGrid
 from app.pipeline.classify import PageClassification, classify_page
 from app.pipeline.extract_digital import extract_page
+from app.pipeline.extract_ocr import OcrEngine, PaddleOcrEngine, extract_page_ocr
 from app.pipeline.gridmap import build_sheet_grid
 from app.pipeline.excel_writer import write_workbook
+from app.pipeline.render import render_page
 
 logger = logging.getLogger(__name__)
-
-
-class ScannedPageNotSupportedError(RuntimeError):
-    """Raised when a page needs OCR, which arrives in Phase 2.
-
-    Failing loudly is deliberate: silently emitting an empty sheet for a scanned
-    page would look like a successful conversion that had simply lost the data.
-    """
-
-    def __init__(self, page_numbers: list[int]) -> None:
-        self.page_numbers = page_numbers
-        joined = ", ".join(str(n) for n in page_numbers)
-        super().__init__(
-            f"pages {joined} have no usable text layer and require OCR "
-            f"(available from Phase 2)"
-        )
 
 
 @dataclass
@@ -72,23 +59,48 @@ def _sheet_title(page_number: int, total_pages: int) -> str:
     return f"Page {page_number}" if total_pages > 1 else "Sheet1"
 
 
-def extract_pages(pdf_path: Path, image_dir: Path, min_chars: int = 20) -> list[PageContent]:
-    """Classify and extract every page of a PDF."""
+def extract_pages(
+    pdf_path: Path,
+    image_dir: Path,
+    min_chars: int | None = None,
+    ocr_engine: OcrEngine | None = None,
+    dpi: int | None = None,
+) -> list[PageContent]:
+    """Classify every page and route it to the extractor it needs.
+
+    The OCR engine is constructed only if a scanned page actually turns up, so a
+    document of digital pages never pays for loading a recognition model.
+    """
+    # Resolved per call, not at import: the process may be reconfigured after
+    # this module is loaded.
+    settings = get_settings()
     contents: list[PageContent] = []
-    scanned: list[int] = []
+    threshold = min_chars if min_chars is not None else settings.min_chars_for_digital
+    resolution = dpi or settings.render_dpi
+    engine = ocr_engine
 
     with fitz.open(pdf_path) as doc, pdfplumber.open(pdf_path) as plumber_pdf:
         for index in range(len(doc)):
-            classification: PageClassification = classify_page(doc[index], min_chars=min_chars)
-            if classification.kind is PageKind.SCANNED:
-                scanned.append(classification.page_number)
-                continue
-            contents.append(
-                extract_page(doc, plumber_pdf, index, classification.kind, image_dir)
+            classification: PageClassification = classify_page(
+                doc[index], min_chars=threshold
             )
 
-    if scanned:
-        raise ScannedPageNotSupportedError(scanned)
+            if classification.kind is PageKind.SCANNED:
+                if engine is None:
+                    engine = PaddleOcrEngine()
+                render = render_page(doc[index], dpi=resolution)
+                contents.append(
+                    extract_page_ocr(
+                        render, engine, dpi=resolution, image_dir=image_dir
+                    )
+                )
+            else:
+                # A hybrid page keeps its text layer; Phase 4's consensus pass is
+                # what catches anything hiding inside its images.
+                contents.append(
+                    extract_page(doc, plumber_pdf, index, classification.kind, image_dir)
+                )
+
     return contents
 
 
@@ -101,13 +113,18 @@ def build_document_grid(job_id: str, pages: list[PageContent]) -> DocumentGrid:
     return DocumentGrid(job_id=job_id, sheets=sheets)
 
 
-def convert_pdf(pdf_path: Path, job_dir: Path, job_id: str) -> ConversionResult:
+def convert_pdf(
+    pdf_path: Path,
+    job_dir: Path,
+    job_id: str,
+    ocr_engine: OcrEngine | None = None,
+) -> ConversionResult:
     """Convert ``pdf_path`` into ``{job_dir}/output.xlsx``."""
     started = time.perf_counter()
     job_dir.mkdir(parents=True, exist_ok=True)
     image_dir = job_dir / "images"
 
-    pages = extract_pages(pdf_path, image_dir)
+    pages = extract_pages(pdf_path, image_dir, ocr_engine=ocr_engine)
 
     sheets: list[SheetGrid] = []
     reports: list[PageReport] = []

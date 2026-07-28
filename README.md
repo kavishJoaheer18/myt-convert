@@ -9,7 +9,7 @@ merged ranges and images of the source — plus per-cell confidence tracking.
 | Phase | Scope | Gate | State |
 | ----- | ----- | ---- | ----- |
 | 1 | Digital PDFs: classification, word + vector extraction, grid mapping, Excel output, upload UI | `pytest tests/test_phase1.py` at 100% cell accuracy | ✅ passing |
-| 2 | Scanned PDFs: OpenCV preprocessing, PaddleOCR PP-StructureV3, per-cell confidence | ≥98% on 300 DPI rasters | not started |
+| 2 | Scanned PDFs: OpenCV preprocessing, PaddleOCR, raster rule + figure detection, per-cell confidence | ≥98% on 300 DPI rasters | ✅ passing (100%) |
 | 3 | Formatting fidelity: borders, fills, colour, alignment, dates/currency/percentages | formatting assertions + LibreOffice render | not started |
 | 4 | Consensus & verification: dual extraction, zoom-and-re-ask, SSIM diff, review UI | ≥19 of 20 injected corruptions flagged | not started |
 

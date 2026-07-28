@@ -534,6 +534,7 @@ def build_sheet_grid(page: PageContent, title: str | None = None) -> SheetGrid:
         return SheetGrid(
             page_number=page.page_number,
             title=sheet_title,
+            kind=page.kind.value,
             n_rows=0,
             n_cols=0,
             page_width_pt=page.width,
@@ -619,6 +620,7 @@ def build_sheet_grid(page: PageContent, title: str | None = None) -> SheetGrid:
     grid = SheetGrid(
         page_number=page.page_number,
         title=sheet_title,
+        kind=page.kind.value,
         n_rows=n_rows,
         n_cols=n_cols,
         cells=cells,

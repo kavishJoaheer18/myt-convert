@@ -14,16 +14,15 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.logging_config import job_logger
-from app.models.db import Cell, Job, JobStatus, Page, SessionLocal
+from app.models.db import Cell, Job, JobStatus, Page, new_session
 from app.models.grid import DocumentGrid
 from app.pipeline.convert import ConversionResult, convert_pdf
 from app.pipeline.types import infer_value
 
-settings = get_settings()
-
 
 def create_job(session: Session, filename: str, upload: Path) -> Job:
     """Register a job and move the upload into its own directory."""
+    settings = get_settings()
     job = Job(filename=filename, status=JobStatus.QUEUED)
     session.add(job)
     session.flush()
@@ -44,7 +43,7 @@ def _persist_document(session: Session, job: Job, document: DocumentGrid) -> Non
         page = Page(
             job_id=job.id,
             page_number=sheet.page_number,
-            kind="digital",
+            kind=sheet.kind,
             n_rows=sheet.n_rows,
             n_cols=sheet.n_cols,
             width_pt=sheet.page_width_pt,
@@ -80,7 +79,8 @@ def run_conversion(job_id: str) -> ConversionResult | None:
     Returns ``None`` if the job vanished; raises nothing on conversion failure —
     the failure is recorded on the job so the API can report it.
     """
-    session: Session = SessionLocal()
+    settings = get_settings()
+    session: Session = new_session()
     log = job_logger(__name__, job_id)
 
     try:

@@ -22,7 +22,15 @@ from sqlalchemy import (
     Text,
     create_engine,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    Session,
+    mapped_column,
+    relationship,
+    sessionmaker,
+)
 
 from app.config import get_settings
 
@@ -168,9 +176,40 @@ class Correction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
-_settings = get_settings()
-engine = create_engine(_settings.database_url, pool_pre_ping=True, future=True)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)
+_engine: Engine | None = None
+_session_factory: sessionmaker[Session] | None = None
+
+
+def get_engine() -> Engine:
+    """The process-wide engine, built on first use.
+
+    Deliberately not created at import time: importing a model should not open a
+    connection pool, and the URL has to be readable from the environment after
+    the module graph is already loaded.
+    """
+    global _engine
+    if _engine is None:
+        _engine = create_engine(get_settings().database_url, pool_pre_ping=True, future=True)
+    return _engine
+
+
+def new_session() -> Session:
+    """A fresh session bound to the shared engine."""
+    global _session_factory
+    if _session_factory is None:
+        _session_factory = sessionmaker(
+            bind=get_engine(), autoflush=False, expire_on_commit=False, future=True
+        )
+    return _session_factory()
+
+
+def reset_engine() -> None:
+    """Drop the cached engine so a new database URL takes effect (tests only)."""
+    global _engine, _session_factory
+    if _engine is not None:
+        _engine.dispose()
+    _engine = None
+    _session_factory = None
 
 
 def init_db() -> None:
@@ -179,4 +218,4 @@ def init_db() -> None:
     Alembic owns migrations for a real deployment; this keeps a fresh
     docker-compose stack usable without a separate migration step.
     """
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=get_engine())
