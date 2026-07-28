@@ -24,6 +24,9 @@ celery_app.conf.update(
     # memory predictable when PaddleOCR loads its models in Phase 2.
     worker_prefetch_multiplier=1,
     task_acks_late=True,
+    # Inline mode runs the task in the calling process, so no broker is needed.
+    task_always_eager=settings.run_conversions_inline,
+    task_eager_propagates=False,
 )
 
 

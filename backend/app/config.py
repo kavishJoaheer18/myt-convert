@@ -22,6 +22,10 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://gridlock:gridlock@postgres:5432/gridlock"
     redis_url: str = "redis://redis:6379/0"
+    #: Run conversions inside the request instead of handing them to a worker.
+    #: For trying the app on one machine without standing up Redis; a real
+    #: deployment leaves this off so uploads return immediately.
+    run_conversions_inline: bool = False
 
     # --- Extraction tuning -------------------------------------------------
     #: Below this many extractable characters per page, treat it as scanned.
