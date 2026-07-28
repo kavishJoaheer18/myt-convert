@@ -78,7 +78,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if any(p.kind.value == "scanned" for p in classifications):
-        print("\nScanned pages found; loading the OCR models (first run downloads them)…")
+        # Plain ASCII: the Windows console defaults to cp1252 and mangles the rest.
+        print("\nScanned pages found; loading the OCR models (first run downloads them)...")
 
     output = args.output or args.pdf.with_suffix(".xlsx")
     started = time.perf_counter()
