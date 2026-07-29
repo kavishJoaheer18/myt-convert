@@ -205,8 +205,20 @@ You are back at the prompt.
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-**This takes 5–15 minutes the first time.** It downloads about 4 GB. You will
-see many lines like:
+**This takes 5–15 minutes the first time.** It downloads about 1.4 GB:
+
+| Image | Download | On disk |
+| --- | --- | --- |
+| api | 320 MB | ~900 MB |
+| worker | 938 MB | ~3 GB |
+| frontend | 53 MB | ~180 MB |
+| postgres + redis | ~95 MB | ~400 MB |
+
+Layers are compressed in transit and expanded on disk, so `docker images` will
+report roughly three times these download figures. Budget disk by the right-hand
+column.
+
+You will see many lines like:
 
 ```
 [+] Running 5/5
