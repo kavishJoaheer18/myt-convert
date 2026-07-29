@@ -8,8 +8,12 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# No API URL is baked in: the client calls /api on its own origin, which the
-# server rewrites to the backend. The same image therefore runs on any domain.
+# The browser never learns the backend's address — it calls /api on its own
+# origin. But Next resolves rewrite destinations at build time, not on each
+# request, so where /api points has to be fixed here. It is the compose service
+# name, which is stable; override the arg if the backend is somewhere else.
+ARG API_ORIGIN=http://api:8000
+ENV API_ORIGIN=$API_ORIGIN
 RUN npm run build
 
 
