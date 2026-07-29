@@ -49,7 +49,7 @@ runs without OpenCV or PaddlePaddle. The Phase 2 OCR gate needs
 ## How it works
 
 A PDF has no cells — only glyphs at coordinates and lines drawn between them, so
-the grid has to be recovered. GridLock does that in order of trustworthiness:
+the grid has to be recovered, in order of trustworthiness:
 
 1. **Ruling lines.** If the producer drew a table border, its segments *are* the
    grid. Collinear fragments are reassembled first, since tables are usually
