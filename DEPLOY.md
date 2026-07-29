@@ -342,25 +342,62 @@ document itself gives no clue about the order.
 
 ### If the server already runs Ollama
 
-Reuse it — one Ollama serves any number of models and is happily shared. Find
-out what it has:
+Reuse it — one Ollama serves any number of models and is happily shared. First
+find out *how* it runs, because that decides how to reach it:
+
+```bash
+ss -tlnp | grep 11434
+```
+
+If the listener is `docker-proxy`, Ollama is itself in a container. If it is
+`ollama`, it is installed on the host.
+
+See what models it has:
 
 ```bash
 curl -s localhost:11434/api/tags | grep -o '"name":"[^"]*"'
 ```
 
-Then in `.env` point at the host and name a model it already serves:
+**Ollama in a container.** Find its name and network:
+
+```bash
+docker ps --format '{{.Names}}' | grep -i ollama
+```
+
+```bash
+docker inspect <that-name> --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}'
+```
+
+Put both in `.env`, along with the overlay that joins the two stacks:
+
+```
+OLLAMA_BASE_URL=http://omni-ai-ollama-1:11434
+OLLAMA_NETWORK=omni-ai_default
+QUOTE_MODEL=qwen2.5:32b
+COMPOSE_FILE=docker-compose.prod.yml:docker-compose.ollama.yml
+```
+
+The last line means a plain `docker compose up -d` applies the overlay, so you
+do not have to remember two `-f` flags every time. Nothing new is published —
+an Ollama bound to `127.0.0.1` stays private, and the containers talk over
+Docker's internal network.
+
+**Ollama on the host.** Point at the host gateway instead, which the compose
+file already maps:
 
 ```
 OLLAMA_BASE_URL=http://host.docker.internal:11434
-QUOTE_MODEL=llama3.1:8b
 ```
 
-`host.docker.internal` is how a container reaches a service on the host; the
-compose file already maps it. Restart with:
+That only works if Ollama listens beyond loopback. If `ss` showed
+`127.0.0.1:11434` with `ollama` as the listener, add
+`Environment="OLLAMA_HOST=0.0.0.0:11434"` via `sudo systemctl edit ollama`,
+reload, and firewall port 11434 so it is not exposed publicly.
+
+Either way, restart and check:
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d
+docker compose up -d && curl -s localhost:3000/api/quotes/model
 ```
 
 Check the app agrees:

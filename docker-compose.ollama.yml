@@ -1,0 +1,33 @@
+# Use an Ollama that is already running in Docker for another application.
+#
+# Compose overlay — apply it alongside the production file:
+#
+#   docker compose -f docker-compose.prod.yml -f docker-compose.ollama.yml up -d
+#
+# or set this once in .env and just use `docker compose up -d`:
+#
+#   COMPOSE_FILE=docker-compose.prod.yml:docker-compose.ollama.yml
+#
+# It joins the api and worker to the network that Ollama's container sits on, so
+# they reach it by container name. Nothing new is published: an Ollama bound to
+# 127.0.0.1 stays unreachable from outside the host, which is where it belongs.
+#
+# Set both of these in .env to match your installation:
+#
+#   OLLAMA_NETWORK=omni-ai_default          docker inspect <container> shows it
+#   OLLAMA_BASE_URL=http://omni-ai-ollama-1:11434
+#
+# Kept as an overlay rather than folded into the production file because that
+# file must stand alone on a server where no such network exists.
+
+services:
+  api:
+    networks: [default, ollama]
+
+  worker:
+    networks: [default, ollama]
+
+networks:
+  ollama:
+    external: true
+    name: ${OLLAMA_NETWORK:?set OLLAMA_NETWORK in .env, e.g. omni-ai_default}
