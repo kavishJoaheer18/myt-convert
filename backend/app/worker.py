@@ -38,3 +38,12 @@ def convert_job(job_id: str) -> str:
 
     run_conversion(job_id)
     return job_id
+
+
+@celery_app.task(name="gridlock.extract_quotes")
+def extract_quotes(batch_id: str) -> str:
+    """Extract a batch of supplier quotes into one template workbook."""
+    from app.quotes.runner import run_quote_batch
+
+    run_quote_batch(batch_id)
+    return batch_id

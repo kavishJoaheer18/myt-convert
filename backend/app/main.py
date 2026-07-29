@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.jobs import router as jobs_router
+from app.api.quotes import router as quotes_router
 from app.config import get_settings
 from app.logging_config import configure_logging
 from app.models.db import init_db
@@ -42,6 +43,7 @@ if settings.cors_origins:
     )
 
 app.include_router(jobs_router)
+app.include_router(quotes_router)
 
 
 @app.get("/health", tags=["meta"])

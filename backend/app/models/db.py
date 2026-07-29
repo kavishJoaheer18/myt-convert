@@ -159,6 +159,38 @@ class Discrepancy(Base):
     job: Mapped[Job] = relationship(back_populates="discrepancies")
 
 
+class QuoteBatch(Base):
+    """A set of supplier quotes extracted into one template workbook.
+
+    Deliberately its own table rather than a flag on Job: create_all can add a
+    table to a live database but cannot alter one, so a new table deploys onto
+    an existing installation without a migration.
+    """
+
+    __tablename__ = "quote_batches"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    status: Mapped[str] = mapped_column(String(16), default=JobStatus.QUEUED, index=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    #: Newline-separated source filenames, in upload order.
+    filenames: Mapped[str] = mapped_column(Text, default="")
+    file_count: Mapped[int] = mapped_column(Integer, default=0)
+    #: Files whose line items could be read.
+    files_read: Mapped[int] = mapped_column(Integer, default=0)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    #: Anything the operator should check, one per line.
+    warnings: Mapped[str] = mapped_column(Text, default="")
+
+    output_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    duration_ms: Mapped[float] = mapped_column(Float, default=0.0)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+
+
 class Correction(Base):
     """A persisted human correction: ``(crop, wrong value, corrected value)``."""
 

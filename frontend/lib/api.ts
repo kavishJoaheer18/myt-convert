@@ -151,3 +151,40 @@ export function submitReview(
     }),
   });
 }
+
+// --- Supplier quote batches -------------------------------------------------
+
+export interface QuoteBatch {
+  id: string;
+  status: JobStatus;
+  filenames: string[];
+  file_count: number;
+  files_read: number;
+  row_count: number;
+  warnings: string[];
+  error: string | null;
+  duration_ms: number;
+  has_output: boolean;
+  created_at: string;
+}
+
+export function listQuoteBatches(): Promise<QuoteBatch[]> {
+  return request<QuoteBatch[]>("/quotes");
+}
+
+export function getQuoteBatch(id: string): Promise<QuoteBatch> {
+  return request<QuoteBatch>(`/quotes/${id}`);
+}
+
+export function uploadQuotes(files: File[]): Promise<{ id: string; status: JobStatus }> {
+  const body = new FormData();
+  for (const file of files) body.append("files", file);
+  return request<{ id: string; status: JobStatus }>("/quotes", {
+    method: "POST",
+    body,
+  });
+}
+
+export function quoteDownloadUrl(id: string): string {
+  return `${API_URL}/quotes/${id}/download`;
+}

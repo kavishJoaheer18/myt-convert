@@ -30,9 +30,20 @@ export default function RootLayout({
             <Link href="/" aria-label="myt convert home">
               <Wordmark />
             </Link>
-            <p className="hidden text-sm font-light text-telecom/55 sm:block">
-              PDF to Excel, layout intact
-            </p>
+            <nav className="flex items-center gap-1 text-sm">
+              <Link
+                href="/"
+                className="rounded-brand px-4 py-2 font-light text-telecom/70 transition hover:bg-digital/5 hover:text-digital"
+              >
+                Convert
+              </Link>
+              <Link
+                href="/quotes"
+                className="rounded-brand px-4 py-2 font-light text-telecom/70 transition hover:bg-digital/5 hover:text-digital"
+              >
+                Supplier quotes
+              </Link>
+            </nav>
           </div>
         </header>
 

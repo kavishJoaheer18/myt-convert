@@ -53,6 +53,9 @@ services:
       VLM_PROVIDER: ${VLM_PROVIDER:-anthropic}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OCR_MODEL_VARIANT: ${OCR_MODEL_VARIANT:-mobile}
+      ENABLE_QUOTE_MODEL: ${ENABLE_QUOTE_MODEL:-true}
+      QUOTE_MODEL: ${QUOTE_MODEL:-qwen2.5:32b}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
     volumes:
       - job-data:/srv/data
     depends_on:
@@ -84,6 +87,22 @@ services:
           cpus: ${WORKER_CPUS:-2.0}
           memory: ${WORKER_MEMORY:-4g}
 
+  # Local model for mapping unfamiliar quote layouts. Started only with
+  # `--profile quotes`, since the rules handle most suppliers unaided and the
+  # model wants ~20 GB of RAM to itself.
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["quotes"]
+    restart: unless-stopped
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
   frontend:
     image: ghcr.io/${IMAGE_OWNER:-kavishjoaheer18}/myt-convert-frontend:${IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -95,6 +114,7 @@ services:
       - api
 
 volumes:
+  ollama-models:
   postgres-data:
   redis-data:
   job-data:

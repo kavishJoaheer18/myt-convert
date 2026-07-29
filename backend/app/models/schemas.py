@@ -110,3 +110,24 @@ class ReviewResponse(BaseModel):
 class JobCreated(BaseModel):
     id: str
     status: JobStatus
+
+
+class QuoteBatchCreated(BaseModel):
+    id: str
+    status: JobStatus
+
+
+class QuoteBatchSummary(BaseModel):
+    """What the quote batch list and detail views show."""
+
+    id: str
+    status: JobStatus
+    filenames: list[str] = Field(default_factory=list)
+    file_count: int = 0
+    files_read: int = 0
+    row_count: int = 0
+    warnings: list[str] = Field(default_factory=list)
+    error: str | None = None
+    duration_ms: float = 0.0
+    has_output: bool = False
+    created_at: datetime

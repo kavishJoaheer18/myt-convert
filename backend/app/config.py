@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     vlm_model: str = "claude-opus-5"
     ollama_base_url: str = "http://localhost:11434"
+    #: Text model used to map unfamiliar quote layouts onto the template.
+    #: Only consulted when the synonym rules cannot place a table.
+    quote_model: str = "qwen2.5:32b"
+    #: Turn off to keep quote extraction purely rule-based.
+    enable_quote_model: bool = True
     ollama_model: str = "llama3.2-vision"
 
     def job_dir(self, job_id: str) -> Path:
