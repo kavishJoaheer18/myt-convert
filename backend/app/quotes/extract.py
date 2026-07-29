@@ -26,6 +26,7 @@ from app.quotes.values import (
     detect_currency,
     find_date_in,
     find_labelled_value,
+    infer_day_first,
     parse_decimal,
     parse_percent,
 )
@@ -76,7 +77,32 @@ def _strip_page_furniture(line: str) -> str:
     return _PAGE_FURNITURE.sub(" ", line).strip()
 
 
-def extract_header(sheet: SheetGrid, source_file: str) -> QuoteHeader:
+def resolve_day_first(lines: list[str], mapper=None) -> bool | None:
+    """Decide whether this quote writes dates day-first.
+
+    The document is asked first: any date on it with a field above twelve settles
+    the matter as fact. Only when every date is ambiguous is the model consulted,
+    and only if it is confident. Failing both, dates stay blank — visibly missing
+    rather than quietly wrong.
+    """
+    from_document = infer_day_first(lines)
+    if from_document is not None:
+        return from_document
+
+    resolver = getattr(mapper, "resolve_date_convention", None)
+    if resolver is None:
+        return None
+
+    try:
+        return resolver("\n".join(lines[:40]))
+    except Exception as exc:  # noqa: BLE001 - a missing date is not a failed batch
+        logger.warning("date convention resolution failed", extra={"error": str(exc)})
+        return None
+
+
+def extract_header(
+    sheet: SheetGrid, source_file: str, day_first: bool | None = None
+) -> QuoteHeader:
     """Recover supplier, date and currency from the top of the page.
 
     The supplier is taken as the first substantial line, which is where a
@@ -100,7 +126,10 @@ def extract_header(sheet: SheetGrid, source_file: str) -> QuoteHeader:
 
     return QuoteHeader(
         supplier=supplier,
-        quote_date=find_date_in(date_text) or find_date_in(" ".join(lines[:25])),
+        quote_date=(
+            find_date_in(date_text, day_first=day_first)
+            or find_date_in(" ".join(lines[:25]), day_first=day_first)
+        ),
         currency=detect_currency(*lines[:40]),
         reference=reference[:80],
     )
@@ -185,7 +214,9 @@ def extract_quote(
         result.warnings.append("no pages could be read")
         return result
 
-    header = extract_header(document.sheets[0], source_file)
+    first_sheet = document.sheets[0]
+    day_first = resolve_day_first(_page_lines(first_sheet), mapper)
+    header = extract_header(first_sheet, source_file, day_first=day_first)
     result.header = header
 
     for sheet in document.sheets:
@@ -223,6 +254,8 @@ def extract_quote(
     if not header.supplier:
         result.warnings.append("supplier name not found")
     if header.quote_date is None:
-        result.warnings.append("quote date not found or ambiguous")
+        result.warnings.append(
+            "quote date not found, or its day/month order could not be established"
+        )
 
     return result

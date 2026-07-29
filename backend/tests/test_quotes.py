@@ -16,12 +16,13 @@ from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 
 from app.pipeline.convert import build_document_grid, extract_pages
-from app.quotes.extract import extract_quote
+from app.quotes.extract import extract_quote, resolve_day_first
 from app.quotes.schema import TEMPLATE_HEADERS
 from app.quotes.service import run_batch
 from app.quotes.values import (
     detect_currency,
     find_date_in,
+    infer_day_first,
     parse_date,
     parse_decimal,
 )
@@ -81,6 +82,79 @@ def test_parse_date(text: str, expected: date | None) -> None:
 def test_find_date_in_a_longer_line() -> None:
     """Labels run into the next field when the page put them side by side."""
     assert find_date_in("Date: 2026/05/06 Partner Email:") == date(2026, 5, 6)
+
+
+@pytest.mark.parametrize(
+    ("day_first", "expected"),
+    [(True, date(2026, 6, 5)), (False, date(2026, 5, 6)), (None, None)],
+)
+def test_ambiguous_date_follows_the_stated_convention(
+    day_first: bool | None, expected: date | None
+) -> None:
+    assert parse_date("05/06/2026", day_first=day_first) == expected
+
+
+@pytest.mark.parametrize(
+    ("lines", "expected"),
+    [
+        # 27 can only be a day, which settles every other date on the page.
+        (["Date: 27/07/2026", "Due: 05/06/2026"], True),
+        # 27 in the middle can only be a day, so the month leads.
+        (["Issued 07/27/2026"], False),
+        # Nothing above twelve anywhere: the document cannot answer.
+        (["Date: 05/06/2026", "Due: 01/02/2026"], None),
+        # Two conventions on one page means neither can be trusted.
+        (["Date: 27/07/2026", "Due: 07/27/2026"], None),
+        (["no dates here at all"], None),
+    ],
+)
+def test_document_settles_its_own_date_convention(
+    lines: list[str], expected: bool | None
+) -> None:
+    """A date with a field above twelve is evidence, not a guess."""
+    assert infer_day_first(lines) == expected
+
+
+def test_model_resolves_a_convention_the_document_cannot() -> None:
+    """Where every date is ambiguous, the model is asked — and is believed."""
+
+    class _Resolver:
+        def __init__(self) -> None:
+            self.asked_with = ""
+
+        def resolve_date_convention(self, context: str) -> bool:
+            self.asked_with = context
+            return True
+
+    resolver = _Resolver()
+    lines = ["Mauricienne Fournitures Ltee", "Port Louis", "Date: 05/06/2026"]
+
+    assert resolve_day_first(lines, resolver) is True
+    assert "Port Louis" in resolver.asked_with, "the model needs the letterhead"
+
+
+def test_model_is_not_asked_when_the_document_already_answers() -> None:
+    """The cheap, certain answer is used before the expensive, probable one."""
+
+    class _Resolver:
+        called = False
+
+        def resolve_date_convention(self, context: str) -> bool:
+            _Resolver.called = True
+            return False
+
+    assert resolve_day_first(["Date: 27/07/2026"], _Resolver()) is True
+    assert _Resolver.called is False
+
+
+def test_unsure_model_leaves_the_date_blank() -> None:
+    """A missing date is visible and gets fixed; a wrong one is neither."""
+
+    class _Unsure:
+        def resolve_date_convention(self, context: str) -> None:
+            return None
+
+    assert resolve_day_first(["Date: 05/06/2026"], _Unsure()) is None
 
 
 @pytest.mark.parametrize(

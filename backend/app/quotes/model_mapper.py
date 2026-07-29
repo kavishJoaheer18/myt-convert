@@ -53,6 +53,26 @@ Rules:
 - If there is no line-item table on this page, reply {"first_data_row": null}.
 """
 
+_DATE_SYSTEM = """\
+You are shown the text of a supplier quotation. It contains a date written as
+three numbers, such as 05/06/2026, and it is not clear whether the day or the
+month comes first.
+
+Decide which, using evidence in the document:
+- The supplier's country. Most of the world writes the day first; the United
+  States writes the month first.
+- Any other date on the page written with a spelled-out month.
+- The language of the document.
+
+Respond with JSON only, no prose:
+{"order": "day_first" | "month_first" | "unsure",
+ "confidence": 0.0-1.0,
+ "reason": "the evidence you used, in one short sentence"}
+
+Answer "unsure" with a low confidence if the document gives you nothing to go
+on. A wrong date is worse than a missing one.
+"""
+
 _JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)
 
 
@@ -94,6 +114,61 @@ class OllamaQuoteMapper:
 
         # Ollama reports "qwen2.5:32b"; accept a bare family name too.
         return any(name == self.model or name.startswith(f"{self.model}:") for name in names)
+
+    def resolve_date_convention(self, context: str) -> bool | None:
+        """Decide whether a quote writes dates day-first, from its own context.
+
+        Only asked when the document cannot answer for itself — every date on it
+        has both fields at twelve or below. The model gets the letterhead and
+        the surrounding text, which is where the answer usually is: an address
+        in Mauritius or France means day-first, one in the United States does
+        not, and a supplier who spells a month elsewhere on the page has shown
+        their hand.
+
+        Returns None if the model is unsure, and the date is then left blank
+        rather than filled in with a coin toss.
+        """
+        try:
+            response = httpx.post(
+                f"{self.base_url}/api/chat",
+                json={
+                    "model": self.model,
+                    "stream": False,
+                    "format": "json",
+                    "options": {"temperature": 0},
+                    "messages": [
+                        {"role": "system", "content": _DATE_SYSTEM},
+                        {"role": "user", "content": context[:4000]},
+                    ],
+                },
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            content = response.json().get("message", {}).get("content", "")
+        except (httpx.HTTPError, ValueError) as exc:
+            logger.warning("date convention call failed", extra={"error": str(exc)})
+            return None
+
+        parsed = _parse(content)
+        if not parsed:
+            return None
+
+        order = str(parsed.get("order", "")).strip().lower()
+        confidence = parsed.get("confidence", 0)
+        try:
+            confident = float(confidence) >= 0.6
+        except (TypeError, ValueError):
+            confident = False
+
+        if not confident or order not in {"day_first", "month_first"}:
+            logger.info(
+                "date convention left unresolved",
+                extra={"order": order, "confidence": confidence},
+            )
+            return None
+
+        logger.info("model resolved date convention", extra={"order": order})
+        return order == "day_first"
 
     def __call__(self, sheet: SheetGrid) -> TableLocation | None:
         """Map one sheet, or return None if the model finds no table."""

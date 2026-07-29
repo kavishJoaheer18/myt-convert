@@ -170,7 +170,7 @@ _DATE_LIKE = re.compile(
 )
 
 
-def find_date_in(text: str | None) -> date | None:
+def find_date_in(text: str | None, day_first: bool | None = None) -> date | None:
     """Pull a date out of a longer string.
 
     A label's value often runs into whatever follows it on the same line —
@@ -181,10 +181,37 @@ def find_date_in(text: str | None) -> date | None:
     if not text:
         return None
     for match in _DATE_LIKE.finditer(str(text)):
-        parsed = parse_date(match.group(1))
+        parsed = parse_date(match.group(1), day_first=day_first)
         if parsed is not None:
             return parsed
     return None
+
+
+def infer_day_first(texts: list[str]) -> bool | None:
+    """Work out a document's date convention from the dates it contains.
+
+    A quote that prints `27/07/2026` anywhere has answered the question for
+    every other date on it: 27 can only be a day. This is evidence, not a guess,
+    so it is worth exhausting before asking anything cleverer.
+
+    Returns None when every date on the page is ambiguous, or when they
+    contradict each other.
+    """
+    votes: set[bool] = set()
+
+    for text in texts:
+        for match in _DATE_LIKE.finditer(str(text or "")):
+            numeric = _NUMERIC_DATE.match(match.group(1))
+            if numeric is None:
+                continue
+            first, second, _ = (int(g) for g in numeric.groups())
+            if first > 12 >= second:
+                votes.add(True)
+            elif second > 12 >= first:
+                votes.add(False)
+
+    # Two conventions on one page means neither can be trusted.
+    return votes.pop() if len(votes) == 1 else None
 
 
 def find_labelled_value(lines: list[str], *labels: str) -> str:
