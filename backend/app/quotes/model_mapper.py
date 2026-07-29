@@ -102,18 +102,42 @@ class OllamaQuoteMapper:
         self.model = model or settings.quote_model
         self.timeout = timeout
 
-    def is_available(self) -> bool:
-        """Whether Ollama is reachable and the model is pulled."""
+    def available_models(self) -> list[str]:
+        """Every model this Ollama serves, or an empty list if unreachable.
+
+        One Ollama can serve any number of models and is happily shared with
+        other applications, so this reports what is there rather than assuming
+        the instance belongs to us.
+        """
         try:
             response = httpx.get(f"{self.base_url}/api/tags", timeout=5.0)
             response.raise_for_status()
-            names = {m.get("name", "") for m in response.json().get("models", [])}
+            return sorted(m.get("name", "") for m in response.json().get("models", []))
         except (httpx.HTTPError, ValueError) as exc:
-            logger.info("ollama unavailable", extra={"error": str(exc)})
+            logger.info(
+                "ollama unreachable", extra={"url": self.base_url, "error": str(exc)}
+            )
+            return []
+
+    def is_available(self) -> bool:
+        """Whether Ollama is reachable and the configured model is pulled."""
+        names = self.available_models()
+        if not names:
             return False
 
         # Ollama reports "qwen2.5:32b"; accept a bare family name too.
-        return any(name == self.model or name.startswith(f"{self.model}:") for name in names)
+        found = any(
+            name == self.model or name.startswith(f"{self.model}:") for name in names
+        )
+        if not found:
+            # Naming the alternatives saves a round of guessing when the server
+            # already runs Ollama for something else.
+            logger.warning(
+                "quote model not pulled; unfamiliar layouts will be reported "
+                "rather than mapped",
+                extra={"wanted": self.model, "available": names, "url": self.base_url},
+            )
+        return found
 
     def resolve_date_convention(self, context: str) -> bool | None:
         """Decide whether a quote writes dates day-first, from its own context.

@@ -58,6 +58,10 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
     volumes:
       - job-data:/srv/data
+    extra_hosts:
+      # Lets OLLAMA_BASE_URL point at an Ollama already running on the host,
+      # rather than starting a second copy of it.
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
@@ -77,6 +81,8 @@ services:
       # OCR models are ~200 MB and download on first use; keeping them out of
       # the container means a redeploy does not fetch them again.
       - paddle-models:/root/.paddlex
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}

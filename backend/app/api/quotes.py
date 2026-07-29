@@ -101,6 +101,33 @@ async def submit_batch(
     return QuoteBatchCreated(id=batch.id, status=JobStatus(batch.status))
 
 
+@router.get("/model", tags=["meta"])
+def model_status() -> dict[str, object]:
+    """Whether the quote model is reachable, and what the server actually has.
+
+    Useful when Ollama is shared with another application: it reports every
+    model that instance serves, so the right one can be named in `.env` without
+    guessing.
+    """
+    settings = get_settings()
+    if not settings.enable_quote_model:
+        return {"enabled": False, "reason": "ENABLE_QUOTE_MODEL is false"}
+
+    from app.quotes.model_mapper import OllamaQuoteMapper
+
+    mapper = OllamaQuoteMapper()
+    available = mapper.available_models()
+
+    return {
+        "enabled": True,
+        "url": mapper.base_url,
+        "configured_model": mapper.model,
+        "reachable": bool(available),
+        "model_present": mapper.is_available(),
+        "available_models": available,
+    }
+
+
 @router.get("", response_model=list[QuoteBatchSummary])
 def list_batches(session: Session = Depends(get_session)) -> list[QuoteBatchSummary]:
     statement = select(QuoteBatch).order_by(QuoteBatch.created_at.desc()).limit(100)

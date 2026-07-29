@@ -333,6 +333,80 @@ Caddy gets the HTTPS certificate itself within a minute.
 
 ---
 
+## Using a model for supplier quotes
+
+Quote column headings are matched against a built-in synonym list first, so
+familiar layouts never reach a model. A model is only needed for suppliers whose
+headings the rules cannot place, and for dates written 05/06/2026 where the
+document itself gives no clue about the order.
+
+### If the server already runs Ollama
+
+Reuse it — one Ollama serves any number of models and is happily shared. Find
+out what it has:
+
+```bash
+curl -s localhost:11434/api/tags | grep -o '"name":"[^"]*"'
+```
+
+Then in `.env` point at the host and name a model it already serves:
+
+```
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+QUOTE_MODEL=llama3.1:8b
+```
+
+`host.docker.internal` is how a container reaches a service on the host; the
+compose file already maps it. Restart with:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Check the app agrees:
+
+```bash
+curl -s localhost:3000/api/quotes/model
+```
+
+That reports whether Ollama is reachable, whether your chosen model is present,
+and lists every model it found — so if the name is wrong you can see the right
+one rather than guess.
+
+### Sharing an instance with another application
+
+Ollama loads a model on demand and keeps it in memory for a few minutes. Two
+applications using *different* models will make it swap between them, which
+costs a reload each time and needs enough RAM for whichever is loaded. Two
+things follow:
+
+- Reusing the model the other application already has is cheaper than adding a
+  second one, even if a bigger model would be a little more accurate.
+- If you do add one, check there is headroom. A 32B model wants about 20 GB.
+
+### If there is no Ollama yet
+
+The compose file can start one, kept behind a profile so it does not run
+unasked:
+
+```bash
+docker compose -f docker-compose.prod.yml --profile quotes up -d
+```
+
+```bash
+docker compose -f docker-compose.prod.yml exec ollama ollama pull qwen2.5:32b
+```
+
+Set `OLLAMA_BASE_URL=http://ollama:11434` in `.env` for this case.
+
+### Without any model at all
+
+Everything still works. Familiar layouts extract normally; unfamiliar ones are
+listed in a Notes sheet inside the workbook, and ambiguous dates are left blank.
+Set `ENABLE_QUOTE_MODEL=false` to stop the app looking for Ollama entirely.
+
+---
+
 ## Part 9 — Using it day to day
 
 ### Watch what it is doing
