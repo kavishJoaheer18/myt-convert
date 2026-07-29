@@ -388,6 +388,12 @@ Both land in the current folder as `.tar.gz` files. Copy them off the server wit
 | Browser shows nothing at your domain | Tunnel or DNS not routing | Check the tunnel shows **Healthy** in Cloudflare |
 | First scanned PDF takes minutes | OCR models downloading (~200 MB) | Normal, once only. Later ones are fast |
 | `no space left on device` | Disk full | `docker system prune -a` clears old images |
+| `error from registry: denied` | Usually a stale GHCR login. Docker sends a saved credential instead of falling back to anonymous, and a rejected one reads as "denied" | `docker logout ghcr.io` then pull again |
+| `denied` straight after a push to GitHub | The images are still building | Watch the run at github.com/kavishjoaheer18/myt-convert/actions and retry when it goes green |
+
+> GHCR answers `denied` for a package that does not exist as well as for one
+> you cannot see — it hides the difference on purpose. So the same message means
+> "still building", "wrong name", and "bad credential". Check in that order.
 
 ### Getting help
 
