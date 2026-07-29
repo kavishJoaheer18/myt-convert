@@ -90,6 +90,8 @@ It writes `your.xlsx` next to the PDF and prints what it found per page. Add
 Scanned documents additionally need `pip install -r requirements-ocr.txt`; the
 models download themselves on first use.
 
+Deploying to a server is covered step by step in [DEPLOY.md](DEPLOY.md).
+
 For the review workflow — the side-by-side view with click-to-fix cells — run
 the full stack with `docker compose up --build`.
 
