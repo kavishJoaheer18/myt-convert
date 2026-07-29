@@ -128,3 +128,9 @@ Copy `.env.example` to `.env`. Everything has a working default except
 
 Design decisions that were not fully specified are recorded in
 [ASSUMPTIONS.md](ASSUMPTIONS.md).
+
+## What is next
+
+[PLAN.md](PLAN.md) sets out document management and chat: teams with separate
+access, any file format, and answers that cite the exact table row they came
+from.
