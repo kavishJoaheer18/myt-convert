@@ -8,9 +8,8 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# Baked into the client bundle at build time, so it must be the host-visible URL.
-ARG NEXT_PUBLIC_API_URL=http://localhost:8000
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+# No API URL is baked in: the client calls /api on its own origin, which the
+# server rewrites to the backend. The same image therefore runs on any domain.
 RUN npm run build
 
 

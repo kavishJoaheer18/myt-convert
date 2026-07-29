@@ -16,6 +16,11 @@ class Settings(BaseSettings):
 
     app_name: str = "myt convert"
     log_level: str = "INFO"
+    #: Browser origins allowed to call the API directly. Empty in production,
+    #: where the frontend proxies /api on its own origin.
+    cors_origins: list[str] = Field(
+        default_factory=lambda: ["http://localhost:3000", "http://127.0.0.1:3000"]
+    )
 
     #: Root of the per-job artefact tree: ``{data_dir}/{job_id}/``.
     data_dir: Path = Field(default=Path("./data"))

@@ -13,14 +13,6 @@ export default function HomePage() {
           <p className="mt-6 text-xs font-medium uppercase tracking-[0.2em] text-white/60">
             Document conversion
           </p>
-          <h1 className="mt-4 text-3xl font-bold leading-tight tracking-tight sm:text-4xl">
-            Spreadsheets that still look like the page they came from
-          </h1>
-          <p className="mt-4 text-base font-light leading-relaxed text-white/75">
-            Values land in the right cells, merged headings stay merged, and a
-            number that read <span className="font-medium">1,234.50</span> on
-            the page still reads that way in the sheet.
-          </p>
         </div>
 
         {/* An abstracted crop of the myt shape, kept subtle behind the copy. */}

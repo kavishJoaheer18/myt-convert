@@ -1,0 +1,101 @@
+# Production stack. Pulls pre-built images from GitHub Container Registry, so
+# the server never compiles anything — the worker image carries PaddlePaddle and
+# LibreOffice and takes far longer to build than most servers care to spend.
+#
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Only the frontend publishes a port. It proxies /api to the backend internally,
+# which is why nothing else needs exposing and there is no CORS to configure.
+# Put a reverse proxy or a Cloudflare tunnel in front of port 3000 for TLS.
+#
+# See DEPLOY.md.
+
+name: myt-convert
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-mytconvert}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    image: ghcr.io/${IMAGE_OWNER:-kavishjoaheer18}/myt-convert-api:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment: &backend-env
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mytconvert}
+      REDIS_URL: redis://redis:6379/0
+      DATA_DIR: /srv/data
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # The browser reaches the API through the frontend's own origin.
+      CORS_ORIGINS: "[]"
+      ENABLE_CONSENSUS: ${ENABLE_CONSENSUS:-true}
+      VLM_PROVIDER: ${VLM_PROVIDER:-anthropic}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OCR_MODEL_VARIANT: ${OCR_MODEL_VARIANT:-mobile}
+    volumes:
+      - job-data:/srv/data
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    image: ghcr.io/${IMAGE_OWNER:-kavishjoaheer18}/myt-convert-worker:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment: *backend-env
+    volumes:
+      - job-data:/srv/data
+      # OCR models are ~200 MB and download on first use; keeping them out of
+      # the container means a redeploy does not fetch them again.
+      - paddle-models:/root/.paddlex
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    # OCR will use every core it is given; cap it so the box stays responsive.
+    deploy:
+      resources:
+        limits:
+          cpus: ${WORKER_CPUS:-2.0}
+          memory: ${WORKER_MEMORY:-4g}
+
+  frontend:
+    image: ghcr.io/${IMAGE_OWNER:-kavishjoaheer18}/myt-convert-frontend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      API_ORIGIN: http://api:8000
+    ports:
+      - "${PUBLIC_PORT:-3000}:3000"
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:
+  redis-data:
+  job-data:
+  paddle-models:

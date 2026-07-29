@@ -1,7 +1,11 @@
 /** Typed client for the GridLock API. */
 
-export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+/**
+ * Same-origin by default: `/api` is rewritten to the backend server-side (see
+ * next.config.mjs). Keeping this relative means the built image carries no
+ * hard-coded hostname and runs unchanged on any domain.
+ */
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
 export type JobStatus =
   | "QUEUED"
