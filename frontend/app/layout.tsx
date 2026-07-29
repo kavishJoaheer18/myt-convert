@@ -13,7 +13,7 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
-  title: "myt gridlock",
+  title: "myt convert",
   description: "Layout-faithful PDF to Excel conversion",
 };
 
@@ -27,7 +27,7 @@ export default function RootLayout({
       <body>
         <header className="border-b border-light-grey bg-white">
           <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
-            <Link href="/" aria-label="myt gridlock home">
+            <Link href="/" aria-label="myt convert home">
               <Wordmark />
             </Link>
             <p className="hidden text-sm font-light text-telecom/55 sm:block">

@@ -1,6 +1,7 @@
-# GridLock
+# myt convert
 
-Self-hosted PDF → Excel conversion that keeps the layout. Upload a PDF, get back
+Self-hosted PDF → Excel conversion that keeps the layout. A Mauritius Telecom
+service, presented under the myt brand. Upload a PDF, get back
 an `.xlsx` whose values sit in the right cells with the fonts, borders, fills,
 merged ranges and images of the source — plus per-cell confidence tracking.
 

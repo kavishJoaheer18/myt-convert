@@ -14,7 +14,7 @@ class Settings(BaseSettings):
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    app_name: str = "GridLock"
+    app_name: str = "myt convert"
     log_level: str = "INFO"
 
     #: Root of the per-job artefact tree: ``{data_dir}/{job_id}/``.

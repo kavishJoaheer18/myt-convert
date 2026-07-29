@@ -1,4 +1,5 @@
 import { JobList } from "@/components/JobList";
+import { MytLogo } from "@/components/MytLogo";
 import { UploadForm } from "@/components/UploadForm";
 
 export default function HomePage() {
@@ -7,7 +8,9 @@ export default function HomePage() {
       {/* Dark brand surface: Telecom Blue through myt Blue to Digital Blue. */}
       <section className="relative overflow-hidden rounded-brand bg-myt-gradient px-8 py-12 text-white sm:px-12 sm:py-16">
         <div className="relative max-w-2xl">
-          <p className="text-xs font-medium uppercase tracking-[0.2em] text-white/60">
+          {/* Primary logo: reversed out of a dark brand background. */}
+          <MytLogo className="h-9 w-auto text-white" />
+          <p className="mt-6 text-xs font-medium uppercase tracking-[0.2em] text-white/60">
             Document conversion
           </p>
           <h1 className="mt-4 text-3xl font-bold leading-tight tracking-tight sm:text-4xl">
